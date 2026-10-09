@@ -20,11 +20,12 @@ body{background:var(--bg);color:var(--fg);font-family:var(--sans);overflow:hidde
 .help-btn{position:fixed;top:calc(env(safe-area-inset-top,0px) + 16px);right:16px;width:40px;height:40px;border-radius:50%;padding:0;
   font:600 18px/1 var(--sans);color:var(--fg);background:var(--panel);backdrop-filter:blur(8px);border:1px solid var(--line);display:grid;place-items:center}
 .help-btn:hover{border-color:var(--accent)}
-#help{position:fixed;inset:0;width:100%;height:100%;max-width:none;max-height:none;margin:0;padding:0;border:0;background:#fff;color:#1f2a1f}
-#help .help-btn{color:#1f2a1f;background:#fff;border-color:rgba(31,42,31,.2)}
+#help{position:fixed;inset:0;width:100%;height:100%;max-width:none;max-height:none;margin:0;padding:0;border:0;background:#fff;color:#1f2a1f;overflow:auto;overscroll-behavior:contain}
+#help .help-btn{position:sticky;top:16px;margin-left:auto;margin-right:16px;color:#1f2a1f;background:#fff;border-color:rgba(31,42,31,.2);z-index:1}
+#help .help-btn+.help-body{margin-top:-40px}
 #help::backdrop{background:transparent}
 #help[open]{display:block}
-.help-body{max-width:640px;margin:0 auto;padding:calc(env(safe-area-inset-top,0px) + 72px) 24px calc(env(safe-area-inset-bottom,0px) + 40px);display:grid;gap:14px;align-content:start;overflow:auto;height:100%}
+.help-body{max-width:640px;margin:0 auto;padding:calc(env(safe-area-inset-top,0px) + 72px) 24px calc(env(safe-area-inset-bottom,0px) + 40px);display:grid;gap:14px;align-content:start}
 .help-body h1{margin:0 0 6px;font-size:24px;font-weight:600}
 .help-body h2{margin:18px 0 0;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#5d6b5c}
 .dims{display:grid;grid-template-columns:auto 1fr;gap:8px 20px;font-family:var(--mono);font-size:14px;font-variant-numeric:tabular-nums;color:#1f2a1f}
