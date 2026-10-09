@@ -26,6 +26,7 @@ body{background:var(--bg);color:var(--fg);font-family:var(--sans);overflow:hidde
 #help[open]{display:block}
 .help-body{max-width:640px;margin:0 auto;padding:calc(env(safe-area-inset-top,0px) + 72px) 24px calc(env(safe-area-inset-bottom,0px) + 40px);display:grid;gap:14px;align-content:start;overflow:auto;height:100%}
 .help-body h1{margin:0 0 6px;font-size:24px;font-weight:600}
+.help-body h2{margin:18px 0 0;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#5d6b5c}
 .dims{display:grid;grid-template-columns:auto 1fr;gap:8px 20px;font-family:var(--mono);font-size:14px;font-variant-numeric:tabular-nums;color:#1f2a1f}
 .dims span:nth-child(odd){color:#5d6b5c}
 .dock{position:fixed;left:16px;right:16px;bottom:calc(env(safe-area-inset-bottom,0px) + 16px);display:flex;flex-wrap:wrap;gap:8px;justify-content:center;pointer-events:none}
