@@ -1,0 +1,42 @@
+/* Kalpa Villa 3D — page styles. Theme tokens on :root, dark variant via prefers-color-scheme or data-theme. */
+:root{color-scheme:light}
+/* Layout: full-bleed 3D canvas, help button top-right, view + layer controls docked bottom */
+:root{
+  --bg:#e9ece4; --panel:rgba(250,251,247,.92); --fg:#1f2a1f; --muted:#5d6b5c;
+  --line:rgba(31,42,31,.14); --accent:#3f7a3a; --accent-ink:#fff;
+  --sans:"IBM Plex Sans",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#141a14; --panel:rgba(24,31,24,.9); --fg:#e6ece2; --muted:#9aa897;
+  --line:rgba(230,236,226,.14); --accent:#7cbf6f; --accent-ink:#0f1a0e; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#141a14; --panel:rgba(24,31,24,.9); --fg:#e6ece2; --muted:#9aa897;
+  --line:rgba(230,236,226,.14); --accent:#7cbf6f; --accent-ink:#0f1a0e; color-scheme:dark}
+html,body{height:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);overflow:hidden}
+#stage{position:fixed;inset:0}
+#stage canvas{display:block;width:100%;height:100%;touch-action:none}
+/* Help: round button top-right, full-screen dialog with the project notes */
+.help-btn{position:fixed;top:calc(env(safe-area-inset-top,0px) + 16px);right:16px;width:40px;height:40px;border-radius:50%;padding:0;
+  font:600 18px/1 var(--sans);color:var(--fg);background:var(--panel);backdrop-filter:blur(8px);border:1px solid var(--line);display:grid;place-items:center}
+.help-btn:hover{border-color:var(--accent)}
+#help{position:fixed;inset:0;width:100%;height:100%;max-width:none;max-height:none;margin:0;padding:0;border:0;background:#fff;color:#1f2a1f}
+#help .help-btn{color:#1f2a1f;background:#fff;border-color:rgba(31,42,31,.2)}
+#help::backdrop{background:transparent}
+#help[open]{display:block}
+.help-body{max-width:640px;margin:0 auto;padding:calc(env(safe-area-inset-top,0px) + 72px) 24px calc(env(safe-area-inset-bottom,0px) + 40px);display:grid;gap:14px;align-content:start;overflow:auto;height:100%}
+.help-body h1{margin:0 0 6px;font-size:24px;font-weight:600}
+.dims{display:grid;grid-template-columns:auto 1fr;gap:8px 20px;font-family:var(--mono);font-size:14px;font-variant-numeric:tabular-nums;color:#1f2a1f}
+.dims span:nth-child(odd){color:#5d6b5c}
+.dock{position:fixed;left:16px;right:16px;bottom:calc(env(safe-area-inset-bottom,0px) + 16px);display:flex;flex-wrap:wrap;gap:8px;justify-content:center;pointer-events:none}
+.group{pointer-events:auto;background:var(--panel);backdrop-filter:blur(8px);border:1px solid var(--line);border-radius:10px;padding:6px;display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+.group .lbl{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding:0 6px}
+#clock{font:500 12px/1 var(--mono);min-width:5.5em;padding:0 6px 0 2px;color:var(--fg);font-variant-numeric:tabular-nums}
+button{font:500 12.5px var(--sans);color:var(--fg);background:transparent;border:1px solid transparent;border-radius:7px;padding:6px 10px;cursor:pointer}
+button:hover{border-color:var(--line)}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+select{font:500 12.5px var(--sans);color:var(--accent-ink);background:var(--accent);border:1px solid transparent;border-radius:7px;padding:6px 28px 6px 10px;cursor:pointer;
+  appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23fff' stroke-width='1.6'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 10px center}
+button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+input[type=range]{accent-color:var(--accent);width:110px}

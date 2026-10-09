@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Kalpa Villa 3D</title>
+<meta name="description" content="Interactive 3D model of Kalpa Villa phase 1: bedroom, lobby and bathroom block with the future living room and kitchen, from plan-3.">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+Sinhala:wght@500&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="stage"></div>
+<button id="help-open" class="help-btn" aria-label="Dimensions" title="Dimensions">?</button>
+
+<dialog id="help" aria-labelledby="help-title">
+  <button id="help-close" class="help-btn" aria-label="Close" title="Close">×</button>
+  <div class="help-body">
+    <h1 id="help-title">Dimensions</h1>
+    <div class="dims">
+      <span>Bedroom</span><span>15′ × 14′, 5′ sliding door</span>
+      <span>Lobby</span><span>5′ × 5′, bathroom off it</span>
+      <span>Bathroom</span><span>10′ × 5′</span>
+      <span>Future living</span><span>12′ × 19′</span>
+      <span>Open kitchen</span><span>14′ × 9′, drain end</span>
+      <span>Main door</span><span>4′ double, far side</span>
+      <span>Garden door</span><span>4′ French window, drain side</span>
+      <span>Eaves / ridge</span><span>11′ / 14½′</span>
+    </div>
+  </div>
+</dialog>
+
+<div class="dock">
+  <div class="group">
+    <label class="lbl" for="views">View</label>
+    <select id="views">
+      <option value="aerial" selected>Aerial</option>
+      <option value="paddy">Paddy side</option>
+      <option value="road">Road side</option>
+      <option value="drain">Drain side</option>
+      <option value="plan">Plan</option>
+      <option value="inside">Inside</option>
+      <option value="kitchen">Kitchen</option>
+    </select>
+  </div>
+  <div class="group">
+    <span class="lbl">Show</span>
+    <button id="t-roof" aria-pressed="true">Roof</button>
+    <button id="t-bed" aria-pressed="true">Bedroom</button>
+    <button id="t-living" aria-pressed="false">Living room</button>
+    <button id="t-labels" aria-pressed="true">Labels</button>
+    <label class="lbl" for="sun">Time</label>
+    <input id="sun" type="range" min="0" max="100" value="35">
+    <output id="clock" for="sun">10:12</output>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
