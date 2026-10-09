@@ -12,6 +12,13 @@ stage.appendChild(renderer.domElement);
 const scene=new THREE.Scene();
 scene.background=new THREE.Color(0xcfe0e6);
 scene.fog=new THREE.Fog(0xcfe0e6,90,220);
+// Sky dome: blue at the zenith fading to the fog colour at the horizon, so the ground plane blends into it.
+// The horizon warms towards sunrise and sunset (set from placeSun).
+const sky=new THREE.Mesh(new THREE.SphereGeometry(420,32,16),new THREE.ShaderMaterial({side:THREE.BackSide,depthWrite:false,fog:false,
+  uniforms:{top:{value:new THREE.Color(0x3d86d4)},horizon:{value:new THREE.Color(0xcfe0e6)}},
+  vertexShader:'varying vec3 vP; void main(){vP=position; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
+  fragmentShader:'uniform vec3 top,horizon; varying vec3 vP; void main(){float h=clamp(normalize(vP).y,0.0,1.0); gl_FragColor=linearToOutputTexel(vec4(mix(horizon,top,pow(h,0.6)),1.0));}'}));
+scene.add(sky);
 const camera=new THREE.PerspectiveCamera(45,1,0.1,500);
 const controls=new THREE.OrbitControls(camera,renderer.domElement);
 controls.enableDamping=true; controls.maxPolarAngle=Math.PI*0.495; controls.minDistance=1; controls.maxDistance=140;
@@ -445,6 +452,8 @@ function placeSun(){
   sun.position.copy(sun.target.position).addScaledVector(d,80);
   const t=Math.min(1,Math.sin(el)/.5); // warm, dimmer light near sunrise and sunset
   sun.intensity=.45+.7*t; sun.color.setRGB(1,.82+.13*t,.6+.3*t);
+  sky.material.uniforms.horizon.value.setRGB(.81+.12*(1-t),.88-.08*(1-t),.9-.25*(1-t)); // warm horizon at low sun
+  sky.material.uniforms.top.value.setRGB(.24+.1*(1-t),.53,.83-.1*(1-t));
 }
 sunIn.addEventListener('input',placeSun); placeSun();
 

@@ -68,7 +68,7 @@
 </dialog>
 
 <div class="dock">
-  <div class="group">
+  <div class="group" id="g-view">
     <label class="lbl" for="views">View</label>
     <select id="views">
       <option value="aerial" selected>Aerial</option>
@@ -80,12 +80,14 @@
       <option value="kitchen">Kitchen</option>
     </select>
   </div>
-  <div class="group">
+  <div class="group" id="g-show">
     <span class="lbl">Show</span>
     <button id="t-roof" aria-pressed="true">Roof</button>
     <button id="t-bed" aria-pressed="true">Bedroom</button>
     <button id="t-living" aria-pressed="false">Living room</button>
     <button id="t-labels" aria-pressed="true">Labels</button>
+  </div>
+  <div class="group" id="g-time">
     <label class="lbl" for="sun">Time</label>
     <input id="sun" type="range" min="0" max="100" value="35">
     <output id="clock" for="sun">10:12</output>
