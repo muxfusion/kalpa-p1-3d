@@ -4,12 +4,20 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Kalpa Villa 3D</title>
-<meta name="description" content="Interactive 3D model of Kalpa Villa phase 1: bedroom, lobby and bathroom block with the future living room and kitchen, from plan-3.">
+<meta name="description" content="Interactive 3D model of Kalpa Villa phase 1: bedroom, laundry and bathroom block with the future living room and kitchen, from plan-3.">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+Sinhala:wght@500&display=swap">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div id="stage"></div>
+<div id="tabs" role="tablist" aria-label="Mode">
+  <button data-tab="3d" aria-pressed="true">3D</button>
+  <button data-tab="plan" aria-pressed="false">Plan</button>
+</div>
+<section id="plan" hidden aria-label="Plan and elevations">
+  <button id="plan-pdf" class="pdf-btn">Download PDF</button>
+  <div class="sheets"></div>
+</section>
 <button id="help-open" class="help-btn" aria-label="Dimensions" title="Dimensions">?</button>
 
 <dialog id="help" aria-labelledby="help-title">
@@ -18,7 +26,7 @@
     <h1 id="help-title">Dimensions</h1>
     <div class="dims">
       <span>Bedroom</span><span>15′ × 14′, 5′ sliding door</span>
-      <span>Lobby</span><span>5′ × 5′, bathroom off it</span>
+      <span>Laundry</span><span>5′ × 5′, bathroom off it</span>
       <span>Bathroom</span><span>10′ × 5′</span>
       <span>Future living</span><span>12′ × 19′</span>
       <span>Open kitchen</span><span>14′ × 9′, drain end</span>
@@ -30,7 +38,7 @@
     <h2>Floor areas (internal)</h2>
     <div class="dims">
       <span>Bedroom</span><span>210 sq ft</span>
-      <span>Lobby</span><span>25 sq ft</span>
+      <span>Laundry</span><span>25 sq ft</span>
       <span>Bathroom</span><span>50 sq ft</span>
       <span>Phase 1 total</span><span>285 sq ft</span>
       <span>Living room</span><span>228 sq ft</span>
@@ -50,7 +58,7 @@
     <h2>Wall areas (inside faces, incl. gables)</h2>
     <div class="dims">
       <span>Bedroom</span><span>58 ft run · 691 gross · 564 net</span>
-      <span>Lobby</span><span>20 ft run · 220 gross · 131 net</span>
+      <span>Laundry</span><span>20 ft run · 220 gross · 131 net</span>
       <span>Bathroom</span><span>30 ft run · 330 gross · 301 net</span>
       <span>Living + kitchen</span><span>84 ft run · 973 gross · 799 net</span>
       <span>Note</span><span>sq ft; net deducts doors and windows</span>
@@ -86,16 +94,23 @@
     <button id="t-bed" aria-pressed="true">Bedroom</button>
     <button id="t-living" aria-pressed="false">Living room</button>
     <button id="t-labels" aria-pressed="true">Labels</button>
+    <button id="t-wind" aria-pressed="false">Wind</button>
   </div>
   <div class="group" id="g-time">
     <label class="lbl" for="sun">Time</label>
     <input id="sun" type="range" min="0" max="100" value="35">
     <output id="clock" for="sun">10:12</output>
   </div>
+  <div class="group" id="g-wind" hidden>
+    <label class="lbl" for="month">Month</label>
+    <input id="month" type="range" min="1" max="12" value="6">
+    <output id="windout" for="month">Jun</output>
+  </div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 <script src="app.js"></script>
+<script src="drawings.js"></script>
 </body>
 </html>

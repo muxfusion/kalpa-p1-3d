@@ -26,6 +26,10 @@ controls.enableDamping=true; controls.maxPolarAngle=Math.PI*0.495; controls.minD
 // Units: feet (plan-3). x: 0 = paddy-side wall, 15 = centre wall under the ridge, 27 = far wall of the living room.
 // z: 0 = road side, 19 = drain wall of the bedroom block, DZ = 28 = drain wall of the living room / kitchen.
 const T=0.5, EAVE=11, RIDGE=14.5, OVER=2.5, CX=15, FAR=27, DZ=28, SL=(RIDGE-EAVE)/CX, SR=(RIDGE-EAVE)/(FAR-CX);
+// Passive ventilation option (set VENT=false to revert to the sealed roof): the roof slopes stop RIDGE_GAP short
+// of the ridge under a cap raised RIDGE_LIFT on spacer blocks, and eave-side walls stop VENT_GAP below the roof
+// with exposed rafter tails across the slot. Gable-end walls stay closed.
+const VENT=true, VENT_GAP=.5, RIDGE_GAP=.6, RIDGE_LIFT=.5;
 // Height of the roof underside at the wall line for any x (both slopes meet at the ridge over x = CX)
 const roofH=x=>Math.max(EAVE, x<=CX ? EAVE+x*SL : EAVE+(FAR-x)*SR);
 // Compass: north is the paddy-field direction (-x) turned 30° towards the drain side (+z); east is 90° clockwise from it.
@@ -86,7 +90,7 @@ function stripeTexture(a,b,n){
   const t=new THREE.CanvasTexture(c); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.encoding=THREE.sRGBEncoding; return t;
 }
 
-const groups={core:new THREE.Group(),living:new THREE.Group(),roof:new THREE.Group(),furn:new THREE.Group(),site:new THREE.Group(),labels:new THREE.Group()};
+const groups={core:new THREE.Group(),living:new THREE.Group(),roof:new THREE.Group(),furn:new THREE.Group(),site:new THREE.Group(),labels:new THREE.Group(),wind:new THREE.Group()};
 Object.values(groups).forEach(g=>scene.add(g));
 
 function mesh(geo,m,parent,shadow=true){const o=new THREE.Mesh(geo,m); o.castShadow=shadow; o.receiveShadow=true; parent.add(o); return o;}
@@ -107,6 +111,12 @@ const fillLiving={frame:mat.frame.clone(),glass:mat.glass.clone(),door:mat.door.
 Object.values(fillLiving).forEach(m=>{m.transparent=true;});
 // Interactive doors: every hinged leaf hangs from a group on its hinge line; p runs 0 (closed) → 1 (open)
 const doors=[];
+
+
+// Everything the Plan tab needs: walls, openings and gables are recorded as they are built, so the 2D
+// drawings in drawings.js always match the 3D model. Shared with that script through window.KALPA.
+const DRAW={walls:[],gables:[],extras:[],slabs:[],c:{T,EAVE,RIDGE,OVER,CX,FAR,DZ,SL,SR}};
+window.KALPA=DRAW;
 function hingedLeaf(axis,fixed,hinge,dir,len,y0,H,th,m,parentObj,local){
   const g=new THREE.Group(); parentObj.add(g);
   if(local) axis==='x'?g.position.set(hinge,0,0):g.position.set(0,0,hinge);
@@ -116,7 +126,7 @@ function hingedLeaf(axis,fixed,hinge,dir,len,y0,H,th,m,parentObj,local){
   axis==='x'?leaf.position.set(dir*len/2,H/2,0):leaf.position.set(0,H/2,dir*len/2);
   return g;
 }
-// French window panel: timber stiles and rails, vertical boards below the mid rail, glass above
+// French window panel: timber stiles and rails, glass above and below the mid rail
 function frenchLeaf(axis,fixed,hinge,dir,len,y0,H,fm,parentObj,local){
   const g=new THREE.Group(); parentObj.add(g);
   if(local) axis==='x'?g.position.set(hinge,0,0):g.position.set(0,0,hinge);
@@ -130,14 +140,14 @@ function frenchLeaf(axis,fixed,hinge,dir,len,y0,H,fm,parentObj,local){
   part(.02,.02+st,0,H,.12,fm.frame); part(w-st,w,0,H,.12,fm.frame);                 // stiles
   part(.02+st,w-st,0,.3,.12,fm.frame); part(.02+st,w-st,H-st,H,.12,fm.frame);       // bottom and top rails
   part(.02+st,w-st,mid-.1,mid+.1,.12,fm.frame);                                    // mid rail
-  part(.02+st,w-st,.3,mid-.1,.1,fm.shutter);                                       // vertical timber boards
+  part(.02+st,w-st,.3,mid-.1,.05,fm.glass,false);                                  // lower glass
   part(.02+st,w-st,mid+.1,H-st,.05,fm.glass,false);                                // glass
   return g;
 }
 function fillOpening(axis,fixed,o,parent,fm=fillCore){
   const {s,e,sill,head,type,panels=1}=o;
   if(type==='open') return;
-  if(type==='french'){ // full-height timber-and-glass panels, bi-folding in pairs from each jamb; click to open
+  if(type==='french'){ // full-height glazed timber panels, bi-folding in pairs from each jamb; click to open
     const f=.18, out=o.out||-1, n=panels, w=(e-s-2*f)/n, y0=sill>0?sill+f:.06, H=head-f-y0;
     const entry={leaves:[],p:o.open?1:0,target:o.open?1:0}; doors.push(entry);
     const parts=[box(axis,fixed,s,e,head-f,head,.3,fm.frame,parent), box(axis,fixed,s,e,sill>0?sill:0,y0,.3,fm.frame,parent),
@@ -193,18 +203,31 @@ function fillOpening(axis,fixed,o,parent,fm=fillCore){
 }
 // outDir (optional): which side of the wall is outside (+1 / -1 along its normal); that face gets the cement material
 function wall(axis,fixed,a,b,H,openings,m,parent,outDir){
+  const vent=VENT&&outDir&&axis==='z'; // eave-side exterior wall: leave a slot under the roof, bridged by rafters
+  if(vent) H-=VENT_GAP;
+  DRAW.walls.push({axis,fixed,a,b,H,openings,future:m===mat.ghost});
   const out=outDir?{dir:outDir,mat:m===mat.ghost?mat.ghostOut:mat.cement}:undefined;
-  let cur=a;
-  [...openings].sort((p,q)=>p.s-q.s).forEach(o=>{
-    box(axis,fixed,cur,o.s,0,H,T,m,parent,out);
-    if(o.sill>0) box(axis,fixed,o.s,o.e,0,o.sill,T,m,parent,out);
-    box(axis,fixed,o.s,o.e,o.head,H,T,m,parent,out);
-    fillOpening(axis,fixed,o,parent,m===mat.ghost?fillLiving:fillCore);
-    cur=o.e;
-  });
-  box(axis,fixed,cur,b,0,H,T,m,parent,out);
+  if(vent){
+    const fm=m===mat.ghost?fillLiving:fillCore, sl=fixed<CX?SL:SR, tilt=(fixed<CX?1:-1)*Math.atan(sl);
+    const len=OVER+T+.3, cx=fixed+outDir*(OVER/2+.15-T/2);
+    for(let z=a+.5;z<b-.3;z+=2){ // rafter tails every 2', pitched with the roof
+      const r=mesh(sBox(len,VENT_GAP*.9,.3,fm.frame),fm.frame,parent); r.position.set(cx,H+VENT_GAP/2,z); r.rotation.z=tilt;
+    }
+    [a,b-.5].forEach(z=>box(axis,fixed,z,z+.5,H,H+VENT_GAP,T,m,parent,out)); // close the slot at the corners
+  }
+  // Solid wall is built column by column between the openings' edges, so openings may sit above one another
+  // (e.g. a fanlight over a door). Within a column the openings are stacked by sill height.
+  const cuts=[...new Set([a,b,...openings.flatMap(o=>[o.s,o.e])])].sort((p,q)=>p-q);
+  for(let i=0;i<cuts.length-1;i++){
+    const p=cuts[i], q=cuts[i+1]; if(q-p<=1e-6) continue;
+    const col=openings.filter(o=>o.s<=p+1e-6&&o.e>=q-1e-6).sort((u,v)=>u.sill-v.sill);
+    let y=0; col.forEach(o=>{ box(axis,fixed,p,q,y,o.sill,T,m,parent,out); y=Math.max(y,o.head); });
+    box(axis,fixed,p,q,y,H,T,m,parent,out);
+  }
+  openings.forEach(o=>fillOpening(axis,fixed,o,parent,m===mat.ghost?fillLiving:fillCore));
 }
 function gable(x0,x1,zc,m,parent){ // wall above eave height, following the roof slopes (ridge at x=CX)
+  DRAW.gables.push({x0,x1,zc,future:m===mat.ghostOut});
   const sh=new THREE.Shape(); sh.moveTo(x0,EAVE); sh.lineTo(x1,EAVE); sh.lineTo(x1,roofH(x1));
   if(x0<CX&&x1>CX) sh.lineTo(CX,RIDGE);
   sh.lineTo(x0,roofH(x0)); sh.lineTo(x0,EAVE);
@@ -216,22 +239,22 @@ function gable(x0,x1,zc,m,parent){ // wall above eave height, following the roof
 const tiles=tileTexture();
 const fascia=M(0x3b2d22);
 
-// ---- Phase 1: bedroom + lobby + bathroom ----
+// ---- Phase 1: bedroom + laundry + bathroom ----
 const C=groups.core, h=T/2;
 mesh(new THREE.BoxGeometry(CX+T,.75,19+T),mat.plinth,C).position.set(CX/2,-.375,9.5);
 mesh(new THREE.BoxGeometry(CX,.02,14),mat.floor,C,false).position.set(CX/2,.01,7);          // bedroom 15' × 14'
-mesh(new THREE.BoxGeometry(5,.02,5),mat.floor,C,false).position.set(12.5,.01,16.5);         // lobby 5' × 5', sliding door to the bedroom
+mesh(new THREE.BoxGeometry(5,.02,5),mat.floor,C,false).position.set(12.5,.01,16.5);         // laundry 5' × 5', sliding door to the bedroom
 mesh(new THREE.BoxGeometry(10,.02,5),mat.bathFloor,C,false).position.set(5,.01,16.5);       // bathroom 10' × 5'
 // Paddy-side wall: 8' French window 2' from the road corner, 3' bath window at 5' sill
 wall('z',0,-h,19+h,EAVE,[{s:2,e:10,sill:0,head:7.5,type:'french',panels:4},{s:15,e:18,sill:5,head:7.5,type:'window',panels:2}],mat.plaster,C,-1);
 // Road-side wall: 4' two-panel French window, 2' from the centre wall
 wall('x',0,-h,CX,EAVE,[{s:9,e:13,sill:0,head:7.5,type:'french',panels:2}],mat.plaster,C,-1);
-// Drain-side wall of the bedroom block (bathroom + lobby), running through to the centre wall so the lobby is closed off from the kitchen bay: small windows at 5' sill as in the drain-side elevation
+// Drain-side wall of the bedroom block (bathroom + laundry), running through to the centre wall so the laundry is closed off from the kitchen bay: small windows at 5' sill as in the drain-side elevation
 wall('x',19,-h,13,EAVE,[{s:4,e:5.5,sill:5,head:7.5,type:'window',panels:1},{s:11.2,e:12.2,sill:5,head:7.5,type:'window',panels:1}],mat.plaster,C,1);
 wall('x',19,13,CX+h,EAVE,[],mat.plaster,C); // the last 2' back onto the kitchen bay, so no cement face
 // Bedroom / bathroom partition, taken up to the roof underside so the bedroom can be air-conditioned
 wall('x',14,h,10,EAVE,[],mat.plaster,C); gable(h,CX,14,mat.plaster,C);
-// Wall above the 5' sliding door between the bedroom and the lobby (door head at 7'4"), sealing the bedroom to the roof
+// Wall above the 5' sliding door between the bedroom and the laundry (door head at 7'4"), sealing the bedroom to the roof
 wall('x',14,10,CX,EAVE,[{s:10,e:CX,sill:0,head:7.4,type:'open'}],mat.plaster,C);
 // Sliding door: top-hung timber panel on the bedroom face of the partition, parks westwards over the bathroom wall. Click to slide.
 {
@@ -244,13 +267,15 @@ wall('x',14,10,CX,EAVE,[{s:10,e:CX,sill:0,head:7.4,type:'open'}],mat.plaster,C);
   const pull=mesh(new THREE.BoxGeometry(.1,1,.3),mat.frame,g); pull.position.set(-1.9,3.5,0);
   g.traverse(ob=>{ob.userData.door=entry;});
   entry.leaves.push({g,slide:new THREE.Vector3(-5,0,0),base:g.position.clone()});
+  DRAW.extras.push({type:'slide',z:13.6,x0:10.1,x1:14.9,park:-5});
 }
-// Bathroom / lobby wall with the bathroom door opening from the lobby, also up to the roof underside
+// Bathroom / laundry wall with the bathroom door opening from the laundry, also up to the roof underside
 wall('z',10,14-h,19-h,roofH(10),[{s:14.5,e:17,sill:0,head:7,type:'single',out:-1,hinge:'s'}],mat.plaster,C);
-// Centre wall up to the ridge; 4' opening from the living room squarely into the lobby, 1' clear of the drain wall
+// Centre wall up to the ridge; 4' opening from the living room squarely into the laundry, 1' clear of the drain wall
 wall('z',CX,-h,19+h,RIDGE,[{s:14,e:18,sill:0,head:8,type:'open'}],mat.plaster,C);
 gable(-h,CX,0,mat.cement,C); gable(-h,CX,19,mat.cement,C);
 // Open veranda outside the bedroom's paddy-side French window: 10' × 6' deck at floor level, one step down to the lawn
+DRAW.slabs.push({x0:-6-h,x1:-h,z0:1,z1:11,name:'veranda'});
 mesh(new THREE.BoxGeometry(6,.75,10),mat.plinth,C).position.set(-3-h,-.375,6);
 mesh(new THREE.BoxGeometry(6,.02,10),mat.floor,C,false).position.set(-3-h,.01,6);
 mesh(new THREE.BoxGeometry(1,.375,10),mat.plinth,C).position.set(-6.5-h,-.5625,6);
@@ -266,7 +291,7 @@ wall('x',0,CX,FAR+h,EAVE,[{s:18,e:26,sill:0,head:7.5,type:'french',panels:4}],ma
 wall('z',FAR,-h,DZ+h,EAVE,[{s:3,e:7,sill:0,head:7.5,type:'double',open:true,out:1}],mat.ghost,L,1);
 // Drain-side wall: 4' two-panel French window used as the garden door
 wall('x',DZ,13-h,FAR+h,EAVE,[{s:19,e:23,sill:0,head:7.5,type:'french',panels:2,out:1}],mat.ghost,L,1);
-// Kitchen bay wall on the paddy side, up to the roof underside, with a wide 5½' window above the counter looking over the paddy field; solid wall behind the fridge in the lobby-side corner
+// Kitchen bay wall on the paddy side, up to the roof underside, with a wide 5½' window above the counter looking over the paddy field; solid wall behind the fridge in the laundry-side corner
 wall('z',13,19,DZ-h,roofH(13),[{s:21.75,e:27.25,sill:3.5,head:7.5,type:'window',panels:3}],mat.ghost,L,-1);
 gable(CX,FAR+h,0,mat.ghostOut,L); gable(13-h,FAR+h,DZ,mat.ghostOut,L);
 
@@ -276,7 +301,7 @@ const K=new THREE.Group(); L.add(K);
 const kMat={base:M(0x5f6b52,{roughness:.7}),top:M(0xcfc8bb,{roughness:.35}),steel:M(0xb8bcbf,{roughness:.3,metalness:.6}),
   dark:M(0x2a2a2a,{roughness:.5}),shelf:M(0x8a6a4c)};
 const kb=(w,hh,d,x,y,z,m)=>{const o=new THREE.Mesh(new THREE.BoxGeometry(w,hh,d),m); o.position.set(x,y,z); o.receiveShadow=true; K.add(o); return o;};
-// paddy-side (pantry) run: fridge in the lobby-side corner (z 19.25 → 21.55), counter from there to the drain-end corner (z 21.6 → 27.75)
+// paddy-side (pantry) run: fridge in the laundry-side corner (z 19.25 → 21.55), counter from there to the drain-end corner (z 21.6 → 27.75)
 kb(2.3,5.8,2.3,14.4,2.9,20.4,M(0xe9e9e6,{roughness:.4}));
 kb(2,2.8,6.15,14.25,1.4,24.675,kMat.base); kb(2.1,.15,6.25,14.25,2.875,24.675,kMat.top);
 // drain-wall run: x 15.25 → 18, 2' deep
@@ -305,6 +330,7 @@ K.traverse(o=>{if(o.isMesh){o.castShadow=true;o.userData.solid=true;}});
 // with a step towards the road and another along the outer edge
 const V=new THREE.Group(); L.add(V);
 const vb=(w,hh,d,x,y,z,m,sh=true)=>{const o=mesh(new THREE.BoxGeometry(w,hh,d),m,V,sh); o.position.set(x,y,z); o.userData.solid=true; return o;};
+DRAW.slabs.push({x0:FAR+h,x1:FAR+h+6,z0:-.25,z1:10,name:'veranda'});
 vb(6,.75,10.25,FAR+h+3,-.375,4.875,mat.plinth);
 vb(6,.02,10.25,FAR+h+3,.01,4.875,mat.floor,false);
 vb(1,.375,10.25,FAR+h+6.5,-.5625,4.875,mat.plinth);
@@ -316,27 +342,38 @@ fillLiving.frame.opacity=fillLiving.door.opacity=fillLiving.shutter.opacity=.3; 
 // living-room slope 12' + overhang, both from 11' eaves to the 14½' ridge. The living room runs 7' further
 // towards the drain, so the ridge and living slope are longer, and a narrow strip of the paddy-side slope
 // continues over the kitchen bay (x 13 → 15).
-function slope(side,run,sl,z0,z1){ // side -1 = paddy side of the ridge, 1 = living side
+function slope(side,run,sl,z0,z1,gap=0){ // side -1 = paddy side of the ridge, 1 = living side; gap = clear slot left at the ridge
+  run-=gap;
   const len=Math.hypot(run,run*sl), dep=z1-z0, t=tiles.clone(); t.needsUpdate=true; t.repeat.set(len/1.1,dep/1.05);
   const o=mesh(new THREE.BoxGeometry(len,.25,dep),[fascia,fascia,M(0xffffff,{map:t,roughness:.75}),fascia,fascia,fascia],groups.roof);
-  o.position.set(CX+side*(run/2), RIDGE-(run/2)*sl+.35, (z0+z1)/2);
+  o.position.set(CX+side*(gap+run/2), RIDGE-(gap+run/2)*sl+.35, (z0+z1)/2);
   o.rotation.z=-side*Math.atan(sl);
 }
-slope(-1,CX+OVER,SL,-OVER,19+OVER);
-slope(-1,2+OVER,SL,19+OVER,DZ+OVER);
-slope(1,FAR-CX+OVER,SR,-OVER,DZ+OVER);
-const ridge=mesh(new THREE.CylinderGeometry(.32,.32,DZ+2*OVER,12),M(0x9b4d2a),groups.roof); ridge.rotation.x=Math.PI/2; ridge.position.set(CX,RIDGE+.45,DZ/2);
+const RG=VENT?RIDGE_GAP:0;
+slope(-1,CX+OVER,SL,-OVER,19+OVER,RG);
+slope(-1,2+OVER,SL,19+OVER,DZ+OVER,RG);
+slope(1,FAR-CX+OVER,SR,-OVER,DZ+OVER,RG);
+if(VENT){ // ventilated ridge: a short capping on each side, lifted on spacer blocks, slot open underneath
+  const lift=RIDGE_LIFT, capRun=RIDGE_GAP+1.2;
+  [[-1,SL],[1,SR]].forEach(([side,sl])=>{
+    const len=Math.hypot(capRun,capRun*sl), t=tiles.clone(); t.needsUpdate=true; t.repeat.set(len/1.1,(DZ+2*OVER)/1.05);
+    const cap=mesh(new THREE.BoxGeometry(len,.2,DZ+2*OVER),[fascia,fascia,M(0xffffff,{map:t,roughness:.75}),fascia,fascia,fascia],groups.roof);
+    cap.position.set(CX+side*(capRun/2), RIDGE-(capRun/2)*sl+.35+lift, DZ/2); cap.rotation.z=-side*Math.atan(sl);
+    for(let z=-OVER+1;z<DZ+OVER;z+=4){ const sp=mesh(new THREE.BoxGeometry(.3,lift,.4),fascia,groups.roof); sp.position.set(CX+side*(RIDGE_GAP+.5),RIDGE-(RIDGE_GAP+.5)*sl+.35+lift/2,z); }
+  });
+}
+const ridge=mesh(new THREE.CylinderGeometry(.32,.32,DZ+2*OVER,12),M(0x9b4d2a),groups.roof); ridge.rotation.x=Math.PI/2; ridge.position.set(CX,RIDGE+.45+(VENT?RIDGE_LIFT:0),DZ/2);
 
 // ---- Fittings ----
 const F=groups.furn;
 const blk=(w,hh,d,x,y,z,m)=>{const o=mesh(new THREE.BoxGeometry(w,hh,d),m,F); o.position.set(x,y,z); return o;};
-// bed with its headboard on the centre wall, clear of the road-side window and the lobby opening
+// bed with its headboard on the centre wall, clear of the road-side window and the laundry opening
 blk(6.5,1.4,5,11.4,.7,7,mat.wood); blk(6.3,.6,4.8,11.4,1.7,7,mat.fabric); blk(.4,3.6,5.2,14.55,1.8,7,mat.wood);
 blk(1.6,.4,1.2,12.9,2.2,5.4,mat.white); blk(1.6,.4,1.2,12.9,2.2,8.6,mat.white);
-// lobby: 2'-deep counter-height storage on the drain wall (the grey strip on plan-3), under the small window
+// laundry: 2'-deep counter-height storage on the drain wall (the grey strip on plan-3), under the small window
 blk(3.5,3,1.8,12,1.5,17.85,mat.wood);
 // bathroom: shower at the paddy end behind a half-height wall, WC and basin on the drain wall
-blk(.33,5,3,3,2.5,17.25,mat.plaster); // 4" shower wall, 5' high, 3' long from the drain wall, 1½' entry gap at the lobby end
+blk(.33,5,3,3,2.5,17.25,mat.plaster); // 4" shower wall, 5' high, 3' long from the drain wall, 1½' entry gap at the laundry end
 blk(1.6,.1,1.6,1.5,.06,16.5,mat.plinth);
 blk(1.5,1.4,2.2,5.3,.7,17.6,mat.white);
 blk(2.2,2.6,1.6,8.3,1.3,18,mat.wood); blk(1.3,.4,1,8.3,2.8,18,mat.white);
@@ -361,6 +398,7 @@ const bund=mesh(new THREE.BoxGeometry(1.2,.6,120),M(0x7a6a48),S); bund.position.
 // Raised concrete passage around the house under the eaves: the L-shaped footprint pushed out by the roof overhang
 {
   const d=OVER, pts=[[-h-d,-h-d],[FAR+h+d,-h-d],[FAR+h+d,DZ+h+d],[13-h-d,DZ+h+d],[13-h-d,19+h+d],[-h-d,19+h+d]];
+  DRAW.slabs.push({poly:pts,name:'passage'});
   const sh=new THREE.Shape(); pts.forEach(([x,z],i)=>i?sh.lineTo(x,-z):sh.moveTo(x,-z)); sh.closePath();
   // raised 4½" like the veranda steps: extruded upwards from ground level
   const apron=mesh(new THREE.ExtrudeGeometry(sh,{depth:.375,bevelEnabled:false}),M(0xb8b2a5,{roughness:.95}),S); apron.rotation.x=-Math.PI/2; apron.position.y=-.75;
@@ -369,18 +407,75 @@ const bund=mesh(new THREE.BoxGeometry(1.2,.6,120),M(0x7a6a48),S); bund.position.
 
 // Side labels (Sinhala from the drawings + English), depth-tested so they sit behind the house, toggled with the Labels button
 await document.fonts.load('500 40px "Noto Sans Sinhala"').catch(()=>{});
-function label(en,si,x,y,z){
+// Two-line label sprite (English + Sinhala, or any title + subtitle). Returns a setter so the text can change.
+function makeLabel(parent,scale=4){
   const c=document.createElement('canvas'); c.width=512; c.height=150; const g=c.getContext('2d');
-  g.fillStyle='rgba(20,28,20,.72)'; g.beginPath(); g.roundRect?g.roundRect(6,6,500,138,24):g.rect(6,6,500,138); g.fill();
-  g.fillStyle='#fff'; g.textAlign='center'; g.font='600 46px "IBM Plex Sans", sans-serif'; g.fillText(en,256,64);
-  g.fillStyle='#cfe3c6'; g.font='500 40px "Noto Sans Sinhala", sans-serif'; g.fillText(si,256,120);
   const t=new THREE.CanvasTexture(c); t.encoding=THREE.sRGBEncoding;
-  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:t})); sp.scale.set(4,1.18,1); sp.position.set(x,y,z); groups.labels.add(sp);
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:t})); sp.scale.set(scale,scale*150/512,1); parent.add(sp);
+  const set=(en,si)=>{
+    g.clearRect(0,0,512,150);
+    g.fillStyle='rgba(20,28,20,.72)'; g.beginPath(); g.roundRect?g.roundRect(6,6,500,138,24):g.rect(6,6,500,138); g.fill();
+    g.fillStyle='#fff'; g.textAlign='center'; g.font='600 46px "IBM Plex Sans", sans-serif'; g.fillText(en,256,64);
+    g.fillStyle='#cfe3c6'; g.font='500 40px "Noto Sans Sinhala", "IBM Plex Mono", sans-serif'; g.fillText(si,256,120);
+    t.needsUpdate=true;
+  };
+  return {sprite:sp,set};
 }
+function label(en,si,x,y,z){ const l=makeLabel(groups.labels); l.set(en,si); l.sprite.position.set(x,y,z); }
 label('Paddy field','කුඹුර',-20,2.5,9.5);
 label('Road','පාර',13,2.5,-20);
 label('Drain','කුණු ඇළ',8,2.5,42);
 label('North','උතුර',13.5+NORTH.x*48,2.5,13+NORTH.z*48);
+
+// ---- Wind: monthly prevailing wind at the site (7.978°N, 81.025°E, near Polonnaruwa) ----
+// [bearing the wind blows FROM in degrees clockwise from north, mean speed km/h, steadiness 0–1].
+// Vector means of hourly 10 m wind, 2019–2023, from the Open-Meteo ERA5 archive. The north-east
+// monsoon shows Dec–Feb, the south-west monsoon May–Sep; Mar–Apr and Nov are light and variable.
+const WIND=[[51,7.7,.7],[62,7.9,.7],[96,7,.51],[161,5.9,.26],[247,13.7,.91],[248,18.4,.99],[249,17.6,.97],[248,17.9,.98],[247,16.4,.96],[253,10.4,.74],[305,6.9,.11],[52,7.8,.45]];
+const MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const compass=b=>['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'][Math.round(b/22.5)%16];
+const WG=groups.wind; WG.visible=false;
+const windMat=M(0x2a7fc9,{roughness:.5,transparent:true,opacity:.85});
+// big arrow over the house, built along +x and turned to the flow direction
+const arrow=new THREE.Group(); WG.add(arrow); arrow.position.set(13.5,17.5,13);
+const windLabel=makeLabel(WG,7); windLabel.sprite.position.set(13.5,21.3,13); // readout floats above the arrow
+const shaft=mesh(new THREE.CylinderGeometry(.35,.35,12,16),windMat,arrow,false); shaft.rotation.z=-Math.PI/2; shaft.position.x=-1.5;
+const head=mesh(new THREE.ConeGeometry(1.3,3.5,20),windMat,arrow,false); head.rotation.z=-Math.PI/2; head.position.x=6.2;
+// drifting streaks across the site
+const NS=70, streakPos=new Float32Array(NS*6), streakGeo=new THREE.BufferGeometry();
+streakGeo.setAttribute('position',new THREE.BufferAttribute(streakPos,3));
+WG.add(new THREE.LineSegments(streakGeo,new THREE.LineBasicMaterial({color:0x2a7fc9,transparent:true,opacity:.55})));
+const streaks=Array.from({length:NS},()=>({x:0,y:0,z:0}));
+const wind={flow:new THREE.Vector3(1,0,0),speed:10,len:3,steady:1,R:46};
+function seedStreak(s,anywhere){
+  const perp=new THREE.Vector3(-wind.flow.z,0,wind.flow.x), along=anywhere?(Math.random()*2-1)*wind.R:-wind.R;
+  s.x=13.5+wind.flow.x*along+perp.x*(Math.random()*2-1)*wind.R; s.z=13+wind.flow.z*along+perp.z*(Math.random()*2-1)*wind.R; s.y=1.5+Math.random()*15;
+}
+function setMonth(m){
+  const [bearing,kmh,steady]=WIND[m-1], b=bearing*Math.PI/180;
+  const from=new THREE.Vector3().addScaledVector(NORTH,Math.cos(b)).addScaledVector(EAST,Math.sin(b));
+  wind.flow.copy(from).negate(); wind.speed=kmh; wind.steady=steady; wind.len=1.5+kmh*.25;
+  arrow.rotation.y=Math.atan2(-wind.flow.z,wind.flow.x); arrow.scale.setScalar(.7+kmh/30);
+  windMat.opacity=.35+.5*steady;
+  windOut.textContent=MONTHS[m-1];
+  const detail=`${Math.round(kmh)} km/h${steady<.4?' · variable':''}`;
+  windLabel.set(`${MONTHS[m-1]} · wind from ${compass(bearing)}`,detail);
+  monthIn.setAttribute('aria-valuetext',`${MONTHS[m-1]}, from ${compass(bearing)}, ${detail}`);
+  streaks.forEach(s=>seedStreak(s,true));
+}
+function animateWind(dt){
+  if(!WG.visible) return;
+  const step=wind.speed*.0022*dt; // km/h → feet per ms, scaled for legibility
+  streaks.forEach((s,i)=>{
+    s.x+=wind.flow.x*step; s.z+=wind.flow.z*step;
+    const along=(s.x-13.5)*wind.flow.x+(s.z-13)*wind.flow.z; if(along>wind.R) seedStreak(s,false);
+    const o=i*6; streakPos[o]=s.x; streakPos[o+1]=s.y; streakPos[o+2]=s.z;
+    streakPos[o+3]=s.x-wind.flow.x*wind.len; streakPos[o+4]=s.y; streakPos[o+5]=s.z-wind.flow.z*wind.len;
+  });
+  streakGeo.attributes.position.needsUpdate=true;
+}
+const monthIn=document.getElementById('month'), windOut=document.getElementById('windout');
+monthIn.value=new Date().getMonth()+1; monthIn.addEventListener('input',()=>setMonth(+monthIn.value)); setMonth(+monthIn.value);
 
 // ---- Views ----
 const views={
@@ -415,6 +510,7 @@ function setToggle(id,on){
   const b=document.getElementById(id); b.setAttribute('aria-pressed',on);
   if(id==='t-roof') groups.roof.visible=on;
   if(id==='t-labels') groups.labels.visible=on;
+  if(id==='t-wind'){groups.wind.visible=on; document.getElementById('g-wind').hidden=!on;}
   if(id==='t-bed'){ // solid phase-1 block, or a ghost like the living room
     coreMats.forEach(m=>{
       if(m===coreGlass){m.opacity=on?.35:.12; return;} // glass keeps its own transparency
@@ -430,7 +526,7 @@ function setToggle(id,on){
     L.traverse(o=>{if(o.isMesh&&!o.userData.solid){o.castShadow=on;}});
   }
 }
-['t-roof','t-bed','t-living','t-labels'].forEach(id=>document.getElementById(id).addEventListener('click',e=>setToggle(id,e.currentTarget.getAttribute('aria-pressed')!=='true')));
+['t-roof','t-bed','t-living','t-labels','t-wind'].forEach(id=>document.getElementById(id).addEventListener('click',e=>setToggle(id,e.currentTarget.getAttribute('aria-pressed')!=='true')));
 
 // Sun: Sri Lanka, 7°N. North is the paddy-field direction (-x) turned 30° towards the drain side (+z).
 // Slider = time of day, 06:00 → 18:00. Declination from today's date, so the noon sun sits a little
@@ -495,7 +591,7 @@ function animateDoors(dt){
 doors.forEach(d=>{const a=d.p*Math.PI/2; d.leaves.forEach(l=>{if(l.slide) l.g.position.copy(l.base).addScaledVector(l.slide,d.p); else l.g.rotation.y=l.rot*a;});});
 let lastT=performance.now();
 renderer.setAnimationLoop(now=>{
-  animateDoors(Math.min(50,now-lastT)); lastT=now;
+  animateDoors(Math.min(50,now-lastT)); animateWind(Math.min(50,now-lastT)); lastT=now;
   if(anim){const k=Math.min(1,(now-anim.t0)/anim.dur),e=ease(k);
     camera.position.lerpVectors(anim.from.p,anim.to.p,e); controls.target.lerpVectors(anim.from.t,anim.to.t,e); if(k>=1)anim=null;}
   controls.update(); renderer.render(scene,camera);

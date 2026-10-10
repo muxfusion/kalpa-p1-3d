@@ -1,6 +1,6 @@
 # Kalpa Villa 3D
 
-Interactive 3D model of the Kalpa Villa phase 1 build: the bedroom, lobby and bathroom block,
+Interactive 3D model of the Kalpa Villa phase 1 build: the bedroom, laundry and bathroom block,
 with the future living room and kitchen shown as a ghost. Built with three.js from the drawings in `docs/`.
 
 ## Run it
@@ -18,10 +18,14 @@ Append a hash to open a view directly, for example `index.html#road` or `#plan`.
 
 - Drag to orbit, scroll or pinch to zoom.
 - **View** dropdown: aerial, paddy side, road side, drain side, plan, inside, kitchen.
-- **Show** toggles: roof, bedroom block, living room, site labels. A block that is off is drawn as a faint ghost.
+- **Show** toggles: roof, bedroom block, living room, site labels, wind. A block that is off is drawn as a faint ghost.
+- **Wind** adds a **Month** slider: a large arrow and drifting streaks show the prevailing wind for that month at the real site
+  (7.978°N, 81.025°E). Monthly directions and speeds are vector means of hourly 10 m wind for 2019–2023 from the
+  Open-Meteo ERA5 archive, embedded in `app.js`.
 - **Time** slider: 06:00 to 18:00. The sun follows the real solar path for Sri Lanka (7°N) on today's date,
   with north taken as the paddy-field direction turned 30° towards the drain.
 - Click any French window, door or the bedroom sliding door to open and close it.
+- **Plan** tab (top left): line drawings generated from the same wall data as the model, a dimensioned floor plan and the four elevations. **Download PDF** saves them as a five-page A4 landscape file (jsPDF and svg2pdf load from CDNs on first use; the print dialog is the fallback).
 
 ## Files
 
@@ -30,6 +34,7 @@ Append a hash to open a view directly, for example `index.html#road` or `#plan`.
 | `index.html` | Page markup: title card, view and layer controls |
 | `style.css` | Styles, light and dark theme tokens |
 | `app.js` | The model and all behaviour, in feet, with the plan grid noted at the top |
+| `drawings.js` | The Plan tab: builds the SVG plan and elevations from the wall record app.js publishes |
 | `docs/plan-2.pdf` | Earlier drawing (10' × 19' bedroom block) |
 | `docs/plan-3.pdf` | Current drawing the model follows |
 
@@ -39,4 +44,6 @@ Append a hash to open a view directly, for example `index.html#road` or `#plan`.
   z = 0 at the road, 19 at the bedroom block's drain wall, 28 at the living room's drain wall.
 - Eaves 11', ridge 14½' over the centre wall, so the two roof slopes have different pitches.
 - Walls around the bedroom run to the roof underside so the room can be air-conditioned.
+- Passive ventilation is switchable: `VENT` at the top of `app.js` adds a ventilated ridge (raised capping over a slot) and open eaves
+  (eave-side walls stop 6" under the roof with exposed rafter tails). Set it to `false` for the sealed roof.
 - Three.js and OrbitControls load from CDNs; fonts from Google Fonts. No build step.
