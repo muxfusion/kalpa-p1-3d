@@ -30,12 +30,31 @@ const T=0.5, EAVE=11, RIDGE=14.5, OVER=2.5, CX=15, FAR=27, DZ=28, SL=(RIDGE-EAVE
 // of the ridge under a cap raised RIDGE_LIFT on spacer blocks, and eave-side walls stop VENT_GAP below the roof
 // with exposed rafter tails across the slot. Gable-end walls stay closed.
 const VENT=true, VENT_GAP=.5, RIDGE_GAP=.6, RIDGE_LIFT=.5;
-// Height of the roof underside at the wall line for any x (both slopes meet at the ridge over x = CX)
-const roofH=x=>Math.max(EAVE, x<=CX ? EAVE+x*SL : EAVE+(FAR-x)*SR);
+// Split roof option (set SPLIT=false for the ridged roof): the bedroom roof rises to RIDGE_B at the centre wall and
+// runs HOOD past it, the living roof rises only to TOP_L and stops LSLOT short of the wall underneath, and the band of
+// centre wall between the two roofs is left as one open slot facing the living-room side, shaded by the hood.
+const SPLIT=true, RIDGE_B=14.5, TOP_L=13.5, HOOD=2; // bedroom roof top / living roof top at the centre wall
+const SLB=SPLIT?(RIDGE_B-EAVE)/CX:SL, SRL=SPLIT?(TOP_L-EAVE)/(FAR-CX):SR; // bedroom / living roof pitches
+const roofB=x=>EAVE+x*SLB, roofL=x=>EAVE+(FAR-x)*SRL; // top-of-roof height on the bedroom plane / living plane
+// Kitchen bay roof: slopes down from the centre line towards the paddy side, forming a small gable with the living
+// roof and passing under the bedroom roof's drain wall, so the two blocks' roofs never cross
+const roofK=x=>TOP_L-(CX-x)*SRL;
+// Wall slot: between the living roof top and the bedroom roof underside at the centre wall. The living roof's own
+// vent gap (LSLOT) is made the same size, so one hinged flap closes either: up against the wall it shuts the bedroom
+// slot and the roof gap breathes; swung down flat it covers the roof gap and the bedroom slot breathes.
+const SLOT_SILL=SPLIT?roofL(CX)+.5:0, SLOT_HEAD=SPLIT?roofB(CX)+.07:0, SLOTH=SLOT_HEAD-SLOT_SILL, LSLOT=SPLIT?SLOTH-.05:0, SLOT_Z0=1, SLOT_Z1=18.5;
+// Height of the roof underside at the wall line. With the split roof the kitchen bay (z ≥ 19) sits under the living plane.
+// Walls under a sloping roof stop at the slab's underside, UNDER above the plane line (slab centre +.35, thickness .25)
+const UNDER=.225;
+const roofH=(x,z=0)=>UNDER+(SPLIT ? (x>CX+1e-6?roofL(x):(z<19?roofB(x):roofK(x))) : Math.max(EAVE, x<=CX?roofB(x):roofL(x)));
 // Compass: north is the paddy-field direction (-x) turned 30° towards the drain side (+z); east is 90° clockwise from it.
 const NORTH=new THREE.Vector3(-Math.cos(Math.PI/6),0,Math.sin(Math.PI/6)), EAST=new THREE.Vector3(-Math.sin(Math.PI/6),0,-Math.cos(Math.PI/6));
 
-scene.add(new THREE.HemisphereLight(0xeaf3ff,0x6b5a3e,0.55));
+scene.add(new THREE.HemisphereLight(0xeaf3ff,0x6b5a3e,0.3));
+// Two shadowless fill lights from opposite corners, so walls facing different ways take different tones and
+// interior corners read even where the sun doesn't reach
+const fillA=new THREE.DirectionalLight(0xfff6ea,0.45); fillA.position.set(-20,25,-60); scene.add(fillA); // mostly along z: walls facing the road take the most
+const fillB=new THREE.DirectionalLight(0xe6eeff,0.3); fillB.position.set(60,20,20); scene.add(fillB); // mostly along x: walls facing the far side next, the other two stay darker
 const sun=new THREE.DirectionalLight(0xfff1d6,1.05);
 sun.castShadow=true; sun.shadow.mapSize.set(2048,2048);
 Object.assign(sun.shadow.camera,{left:-40,right:40,top:40,bottom:-40,near:1,far:160});
@@ -115,7 +134,7 @@ const doors=[];
 
 // Everything the Plan tab needs: walls, openings and gables are recorded as they are built, so the 2D
 // drawings in drawings.js always match the 3D model. Shared with that script through window.KALPA.
-const DRAW={walls:[],gables:[],extras:[],slabs:[],c:{T,EAVE,RIDGE,OVER,CX,FAR,DZ,SL,SR}};
+const DRAW={walls:[],gables:[],extras:[],slabs:[],roof:[],c:{T,EAVE,RIDGE,OVER,CX,FAR,DZ,SL,SR,SPLIT,TOP:SPLIT?RIDGE_B:RIDGE}};
 window.KALPA=DRAW;
 function hingedLeaf(axis,fixed,hinge,dir,len,y0,H,th,m,parentObj,local){
   const g=new THREE.Group(); parentObj.add(g);
@@ -208,11 +227,9 @@ function wall(axis,fixed,a,b,H,openings,m,parent,outDir){
   DRAW.walls.push({axis,fixed,a,b,H,openings,future:m===mat.ghost});
   const out=outDir?{dir:outDir,mat:m===mat.ghost?mat.ghostOut:mat.cement}:undefined;
   if(vent){
-    const fm=m===mat.ghost?fillLiving:fillCore, sl=fixed<CX?SL:SR, tilt=(fixed<CX?1:-1)*Math.atan(sl);
+    const fm=m===mat.ghost?fillLiving:fillCore, mid=(a+b)/2;
+    const tilt=!SPLIT?(fixed<CX?Math.atan(SL):-Math.atan(SR)):(fixed>=CX?-Math.atan(SRL):(mid<19?Math.atan(SLB):Math.atan(SRL))); // follows the plane above the wall
     const len=OVER+T+.3, cx=fixed+outDir*(OVER/2+.15-T/2);
-    for(let z=a+.5;z<b-.3;z+=2){ // rafter tails every 2', pitched with the roof
-      const r=mesh(sBox(len,VENT_GAP*.9,.3,fm.frame),fm.frame,parent); r.position.set(cx,H+VENT_GAP/2,z); r.rotation.z=tilt;
-    }
     [a,b-.5].forEach(z=>box(axis,fixed,z,z+.5,H,H+VENT_GAP,T,m,parent,out)); // close the slot at the corners
   }
   // Solid wall is built column by column between the openings' edges, so openings may sit above one another
@@ -226,11 +243,12 @@ function wall(axis,fixed,a,b,H,openings,m,parent,outDir){
   }
   openings.forEach(o=>fillOpening(axis,fixed,o,parent,m===mat.ghost?fillLiving:fillCore));
 }
-function gable(x0,x1,zc,m,parent){ // wall above eave height, following the roof slopes (ridge at x=CX)
-  DRAW.gables.push({x0,x1,zc,future:m===mat.ghostOut});
-  const sh=new THREE.Shape(); sh.moveTo(x0,EAVE); sh.lineTo(x1,EAVE); sh.lineTo(x1,roofH(x1));
-  if(x0<CX&&x1>CX) sh.lineTo(CX,RIDGE);
-  sh.lineTo(x0,roofH(x0)); sh.lineTo(x0,EAVE);
+function gable(x0,x1,zc,m,parent){ // wall above eave height, following the roof above it
+  let pts;
+  if(SPLIT){ const p=x0>=CX-1e-6?(x=>UNDER+roofL(x)):(x=>roofH(x,zc<=19?0:zc)); /* a gable starting at the centre line belongs to the living roof */ pts=[[x0,EAVE],[x1,EAVE],[x1,p(x1)]]; if(x0<CX&&x1>CX) pts.push([CX,p(CX)]); pts.push([x0,p(x0)]); }
+  else{ pts=[[x0,EAVE],[x1,EAVE],[x1,roofH(x1)]]; if(x0<CX&&x1>CX) pts.push([CX,RIDGE+UNDER]); pts.push([x0,roofH(x0)]); }
+  DRAW.gables.push({x0,x1,zc,future:m===mat.ghostOut,pts});
+  const sh=new THREE.Shape(); pts.forEach(([x,y],i)=>i?sh.lineTo(x,y):sh.moveTo(x,y)); sh.closePath();
   const geo=new THREE.ExtrudeGeometry(sh,{depth:T,bevelEnabled:false});
   const o=mesh(geo,m,parent); o.position.z=zc-T/2; return o;
 }
@@ -269,11 +287,16 @@ wall('x',14,10,CX,EAVE,[{s:10,e:CX,sill:0,head:7.4,type:'open'}],mat.plaster,C);
   entry.leaves.push({g,slide:new THREE.Vector3(-5,0,0),base:g.position.clone()});
   DRAW.extras.push({type:'slide',z:13.6,x0:10.1,x1:14.9,park:-5});
 }
-// Bathroom / laundry wall with the bathroom door opening from the laundry, also up to the roof underside
-wall('z',10,14-h,19-h,roofH(10),[{s:14.5,e:17,sill:0,head:7,type:'single',out:-1,hinge:'s'}],mat.plaster,C);
+// Bathroom / laundry wall with the bathroom door opening from the laundry, 8' high
+wall('z',10,14-h,19-h,8,[{s:14.5,e:17,sill:0,head:7,type:'single',out:-1,hinge:'s'}],mat.plaster,C); // bathroom door wall: only to 8', bathroom and laundry share the space above
 // Centre wall up to the ridge; 4' opening from the living room squarely into the laundry, 1' clear of the drain wall
-wall('z',CX,-h,19+h,RIDGE,[{s:14,e:18,sill:0,head:8,type:'open'}],mat.plaster,C);
-gable(-h,CX,0,mat.cement,C); gable(-h,CX,19,mat.cement,C);
+{
+  const bandSill=SLOT_SILL, bandHead=SLOT_HEAD;
+  const band=SPLIT?[{s:SLOT_Z0,e:SLOT_Z1,sill:bandSill,head:bandHead,type:'open'}]:[]; // one plain open slot under the hood, bedroom through laundry
+  wall('z',CX,-h,19+h,SPLIT?roofB(CX)+UNDER:RIDGE+UNDER,[{s:14,e:16.95,sill:0,head:8,type:'open'},...band],mat.plaster,C);
+}
+gable(-h,CX,0,mat.cement,C);
+gable(-h,CX,19,mat.cement,C); // follows the bedroom roof; the kitchen bay roof passes underneath it
 // Open veranda outside the bedroom's paddy-side French window: 10' × 6' deck at floor level, one step down to the lawn
 DRAW.slabs.push({x0:-6-h,x1:-h,z0:1,z1:11,name:'veranda'});
 mesh(new THREE.BoxGeometry(6,.75,10),mat.plinth,C).position.set(-3-h,-.375,6);
@@ -287,12 +310,12 @@ mesh(new THREE.BoxGeometry(FAR-CX,.75,DZ+T),mat.ghost,L,false).position.set((CX+
 mesh(new THREE.BoxGeometry(2+T,.75,DZ-19+h),mat.ghost,L,false).position.set(14,-.375,(19+DZ)/2+h/2);
 // Road-side wall: 8' four-panel French window
 wall('x',0,CX,FAR+h,EAVE,[{s:18,e:26,sill:0,head:7.5,type:'french',panels:4}],mat.ghost,L,-1);
-// Far wall: main entrance, 4' timber double door near the road corner so it is seen from the road
-wall('z',FAR,-h,DZ+h,EAVE,[{s:3,e:7,sill:0,head:7.5,type:'double',open:true,out:1}],mat.ghost,L,1);
+// Far wall: main entrance, an 8' four-panel bi-folding French window (same as the bedroom's) near the road corner
+wall('z',FAR,-h,DZ+h,EAVE,[{s:3,e:11,sill:0,head:7.5,type:'french',panels:4,out:1}],mat.ghost,L,1);
 // Drain-side wall: 4' two-panel French window used as the garden door
 wall('x',DZ,13-h,FAR+h,EAVE,[{s:19,e:23,sill:0,head:7.5,type:'french',panels:2,out:1}],mat.ghost,L,1);
 // Kitchen bay wall on the paddy side, up to the roof underside, with a wide 5½' window above the counter looking over the paddy field; solid wall behind the fridge in the laundry-side corner
-wall('z',13,19,DZ-h,roofH(13),[{s:21.75,e:27.25,sill:3.5,head:7.5,type:'window',panels:3}],mat.ghost,L,-1);
+wall('z',13,19,DZ-h,roofH(13,23),[{s:21.75,e:27.25,sill:3.5,head:7.5,type:'window',panels:3}],mat.ghost,L,-1);
 gable(CX,FAR+h,0,mat.ghostOut,L); gable(13-h,FAR+h,DZ,mat.ghostOut,L);
 
 // Open kitchen in the 14' × 9' bay at the drain end: L-counter along the paddy-side and drain walls,
@@ -326,14 +349,14 @@ const chair=(x,z,dir)=>{ // bar chair: round base, post, seat and a low backrest
 [21.4,23.4,25.4].forEach(x=>{chair(x,22.4,1); chair(x,18.6,-1);}); // three each side
 K.traverse(o=>{if(o.isMesh){o.castShadow=true;o.userData.solid=true;}});
 
-// Open veranda at the front door: 10' × 6' deck at floor level hugging the road corner of the far wall,
-// with a step towards the road and another along the outer edge
+// Open veranda at the front door: 13' × 6' deck at floor level hugging the road corner of the far wall and running
+// the length of the French window, with a step towards the road and another along the outer edge
 const V=new THREE.Group(); L.add(V);
 const vb=(w,hh,d,x,y,z,m,sh=true)=>{const o=mesh(new THREE.BoxGeometry(w,hh,d),m,V,sh); o.position.set(x,y,z); o.userData.solid=true; return o;};
-DRAW.slabs.push({x0:FAR+h,x1:FAR+h+6,z0:-.25,z1:10,name:'veranda'});
-vb(6,.75,10.25,FAR+h+3,-.375,4.875,mat.plinth);
-vb(6,.02,10.25,FAR+h+3,.01,4.875,mat.floor,false);
-vb(1,.375,10.25,FAR+h+6.5,-.5625,4.875,mat.plinth);
+DRAW.slabs.push({x0:FAR+h,x1:FAR+h+6,z0:-.25,z1:13,name:'veranda'});
+vb(6,.75,13.25,FAR+h+3,-.375,6.375,mat.plinth);
+vb(6,.02,13.25,FAR+h+3,.01,6.375,mat.floor,false);
+vb(1,.375,13.25,FAR+h+6.5,-.5625,6.375,mat.plinth);
 vb(7,.375,1,FAR+h+3.5,-.5625,-.75,mat.plinth);
 L.traverse(o=>{if(o.isMesh&&!o.userData.solid){o.castShadow=false;o.renderOrder=2;}});
 fillLiving.frame.opacity=fillLiving.door.opacity=fillLiving.shutter.opacity=.3; fillLiving.glass.opacity=.12;
@@ -342,18 +365,51 @@ fillLiving.frame.opacity=fillLiving.door.opacity=fillLiving.shutter.opacity=.3; 
 // living-room slope 12' + overhang, both from 11' eaves to the 14½' ridge. The living room runs 7' further
 // towards the drain, so the ridge and living slope are longer, and a narrow strip of the paddy-side slope
 // continues over the kitchen bay (x 13 → 15).
-function slope(side,run,sl,z0,z1,gap=0){ // side -1 = paddy side of the ridge, 1 = living side; gap = clear slot left at the ridge
-  run-=gap;
-  const len=Math.hypot(run,run*sl), dep=z1-z0, t=tiles.clone(); t.needsUpdate=true; t.repeat.set(len/1.1,dep/1.05);
-  const o=mesh(new THREE.BoxGeometry(len,.25,dep),[fascia,fascia,M(0xffffff,{map:t,roughness:.75}),fascia,fascia,fascia],groups.roof);
-  o.position.set(CX+side*(gap+run/2), RIDGE-(gap+run/2)*sl+.35, (z0+z1)/2);
-  o.rotation.z=-side*Math.atan(sl);
+// Rafters under a roof plane, every 2' along z, from x0 to x1, top tight to the slab underside. Skipped where a
+// gable or cross wall stands so they never run through a wall. Part of the roof group, so the Roof toggle hides them.
+const rafterMat=M(0x6b5240,{roughness:.7});
+function rafters(x0,x1,z0,z1,plane){
+  const y0=plane(x0), y1=plane(x1), run=x1-x0, len=Math.hypot(run,y1-y0), ang=Math.atan2(y1-y0,run), c=Math.cos(ang), D=.35;
+  for(let z=z0+.5;z<=z1-.3;z+=2){
+    if([0,14,19,DZ].some(w=>Math.abs(z-w)<.45)) continue;
+    const r=mesh(new THREE.BoxGeometry(len,D,.25),rafterMat,groups.roof);
+    r.position.set((x0+x1)/2,(y0+y1)/2+.35-.125/c-D/2/c,z); r.rotation.z=ang;
+  }
 }
-const RG=VENT?RIDGE_GAP:0;
-slope(-1,CX+OVER,SL,-OVER,19+OVER,RG);
-slope(-1,2+OVER,SL,19+OVER,DZ+OVER,RG);
-slope(1,FAR-CX+OVER,SR,-OVER,DZ+OVER,RG);
-if(VENT){ // ventilated ridge: a short capping on each side, lifted on spacer blocks, slot open underneath
+// A tiled slab from x0 to x1 following plane(x) (top-of-tile heights), recorded for the Plan tab
+function roofSlab(x0,x1,z0,z1,plane){
+  const y0=plane(x0), y1=plane(x1), run=x1-x0, len=Math.hypot(run,y1-y0), dep=z1-z0, t=tiles.clone(); t.needsUpdate=true; t.repeat.set(len/1.1,dep/1.05);
+  const o=mesh(new THREE.BoxGeometry(len,.25,dep),[fascia,fascia,M(0xffffff,{map:t,roughness:.75}),fascia,fascia,fascia],groups.roof);
+  o.position.set((x0+x1)/2,(y0+y1)/2+.35,(z0+z1)/2); o.rotation.z=Math.atan2(y1-y0,run);
+  DRAW.roof.push({x0,x1,z0,z1,y0:y0+.35,y1:y1+.35});
+}
+let flap=null;
+const RG=(VENT&&!SPLIT)?RIDGE_GAP:0;
+if(SPLIT){
+  // bedroom roof: one complete piece, hood included. Full eave overhang on the paddy side; at the road and drain
+  // gable ends only a VERGE drip, so the gable walls sit tight under the roof edge. At the drain end it still laps
+  // over the lower kitchen bay roof.
+  const VERGE=.33;
+  roofSlab(-h-OVER,CX+HOOD,-h-OVER,19+h+OVER,roofB);           // edges line up with the passage below on all three outer sides
+  rafters(-h-OVER,CX-h,-h-OVER,19+h+OVER,roofB);              // bedroom: eave to the centre wall
+  roofSlab(CX,FAR+OVER,-OVER,SLOT_Z0,roofL);          // living roof: closed to the wall beyond the flap's run...
+  roofSlab(CX+LSLOT,FAR+OVER,SLOT_Z0,SLOT_Z1,roofL);  // ...with the vent gap at its top edge along the flap
+  roofSlab(CX,FAR+OVER,SLOT_Z1,DZ+OVER,roofL);
+  rafters(CX+LSLOT,FAR+OVER,-OVER,DZ+OVER,roofL);               // living: centre-wall gap to the far eave
+  rafters(13-OVER,CX,19+h,DZ+OVER,roofK);                      // kitchen bay: paddy eave to the ridge
+  roofSlab(13-OVER,CX,19+h,DZ+OVER,roofK);            // kitchen bay roof, sloping down to the paddy side under the drain wall
+  const kr=mesh(new THREE.CylinderGeometry(.3,.3,DZ+OVER-19-h,12),M(0x9b4d2a),groups.roof); kr.rotation.x=Math.PI/2; kr.position.set(CX,roofL(CX)+.65,(19+h+DZ+OVER)/2); // ridge cap over the kitchen bay
+  // the flap: a board the height of the slot, hinged on the wall face at the roof line, running the slot's length
+  flap=new THREE.Group(); flap.position.set(CX+h+.03,SLOT_SILL,(SLOT_Z0+SLOT_Z1)/2); groups.roof.add(flap);
+  const board=mesh(new THREE.BoxGeometry(.06,SLOTH,SLOT_Z1-SLOT_Z0),M(0x6b4f37,{roughness:.6}),flap); board.position.y=SLOTH/2;
+  for(let z=-(SLOT_Z1-SLOT_Z0)/2+.5;z<(SLOT_Z1-SLOT_Z0)/2;z+=3){ const hg=mesh(new THREE.CylinderGeometry(.06,.06,.3,8),fascia,flap); hg.rotation.x=Math.PI/2; hg.position.z=z; }
+  flap.traverse(o=>{o.userData.door={flap:true};}); // clickable like the doors
+}else{
+  roofSlab(-OVER,CX-RG,-OVER,19+OVER,roofB);
+  roofSlab(CX-2-OVER,CX-RG,19+OVER,DZ+OVER,roofB);
+  roofSlab(CX+RG,FAR+OVER,-OVER,DZ+OVER,roofL);
+}
+if(VENT&&!SPLIT){ // ventilated ridge: a short capping on each side, lifted on spacer blocks, slot open underneath
   const lift=RIDGE_LIFT, capRun=RIDGE_GAP+1.2;
   [[-1,SL],[1,SR]].forEach(([side,sl])=>{
     const len=Math.hypot(capRun,capRun*sl), t=tiles.clone(); t.needsUpdate=true; t.repeat.set(len/1.1,(DZ+2*OVER)/1.05);
@@ -362,7 +418,7 @@ if(VENT){ // ventilated ridge: a short capping on each side, lifted on spacer bl
     for(let z=-OVER+1;z<DZ+OVER;z+=4){ const sp=mesh(new THREE.BoxGeometry(.3,lift,.4),fascia,groups.roof); sp.position.set(CX+side*(RIDGE_GAP+.5),RIDGE-(RIDGE_GAP+.5)*sl+.35+lift/2,z); }
   });
 }
-const ridge=mesh(new THREE.CylinderGeometry(.32,.32,DZ+2*OVER,12),M(0x9b4d2a),groups.roof); ridge.rotation.x=Math.PI/2; ridge.position.set(CX,RIDGE+.45+(VENT?RIDGE_LIFT:0),DZ/2);
+if(!SPLIT){ const ridge=mesh(new THREE.CylinderGeometry(.32,.32,DZ+2*OVER,12),M(0x9b4d2a),groups.roof); ridge.rotation.x=Math.PI/2; ridge.position.set(CX,RIDGE+.45+(VENT?RIDGE_LIFT:0),DZ/2); }
 
 // ---- Fittings ----
 const F=groups.furn;
@@ -371,7 +427,7 @@ const blk=(w,hh,d,x,y,z,m)=>{const o=mesh(new THREE.BoxGeometry(w,hh,d),m,F); o.
 blk(6.5,1.4,5,11.4,.7,7,mat.wood); blk(6.3,.6,4.8,11.4,1.7,7,mat.fabric); blk(.4,3.6,5.2,14.55,1.8,7,mat.wood);
 blk(1.6,.4,1.2,12.9,2.2,5.4,mat.white); blk(1.6,.4,1.2,12.9,2.2,8.6,mat.white);
 // laundry: 2'-deep counter-height storage on the drain wall (the grey strip on plan-3), under the small window
-blk(3.5,3,1.8,12,1.5,17.85,mat.wood);
+blk(4.5,3,1.8,12.5,1.5,17.85,mat.wood); // runs from the bathroom wall to the centre wall
 // bathroom: shower at the paddy end behind a half-height wall, WC and basin on the drain wall
 blk(.33,5,3,3,2.5,17.25,mat.plaster); // 4" shower wall, 5' high, 3' long from the drain wall, 1½' entry gap at the laundry end
 blk(1.6,.1,1.6,1.5,.06,16.5,mat.plinth);
@@ -437,8 +493,8 @@ const compass=b=>['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW'
 const WG=groups.wind; WG.visible=false;
 const windMat=M(0x2a7fc9,{roughness:.5,transparent:true,opacity:.85});
 // big arrow over the house, built along +x and turned to the flow direction
-const arrow=new THREE.Group(); WG.add(arrow); arrow.position.set(13.5,17.5,13);
-const windLabel=makeLabel(WG,7); windLabel.sprite.position.set(13.5,21.3,13); // readout floats above the arrow
+const arrow=new THREE.Group(); WG.add(arrow); arrow.position.set(13.5,20,13);
+const windLabel=makeLabel(WG,7); windLabel.sprite.position.set(13.5,23.8,13); // readout floats above the arrow
 const shaft=mesh(new THREE.CylinderGeometry(.35,.35,12,16),windMat,arrow,false); shaft.rotation.z=-Math.PI/2; shaft.position.x=-1.5;
 const head=mesh(new THREE.ConeGeometry(1.3,3.5,20),windMat,arrow,false); head.rotation.z=-Math.PI/2; head.position.x=6.2;
 // drifting streaks across the site
@@ -578,9 +634,18 @@ function doorAt(ev){
 renderer.domElement.addEventListener('pointerdown',e=>{pdown=[e.clientX,e.clientY];});
 renderer.domElement.addEventListener('pointerup',e=>{
   const moved=!pdown||Math.hypot(e.clientX-pdown[0],e.clientY-pdown[1])>5; pdown=null; if(moved) return;
-  const d=doorAt(e); if(d) d.target=d.target?0:1;
+  const d=doorAt(e); if(!d) return;
+  if(d.flap) fl.target=fl.target?0:1; else d.target=d.target?0:1; // click the vent flap to swing it
 });
 renderer.domElement.addEventListener('pointermove',e=>{if(!pdown) renderer.domElement.style.cursor=doorAt(e)?'pointer':'';});
+// Flap: p 0 = up against the wall (bedroom slot shut, living roof gap open), 1 = swung flat over the roof gap (bedroom open)
+const fl={p:1,target:1};
+function animateFlap(dt){
+  if(!flap||fl.p===fl.target) return;
+  fl.p=fl.target>fl.p?Math.min(fl.target,fl.p+dt/900):Math.max(fl.target,fl.p-dt/900);
+  flap.rotation.z=-ease(fl.p)*Math.PI/2;
+}
+if(flap) flap.rotation.z=-Math.PI/2;
 function animateDoors(dt){
   for(const d of doors){
     if(d.p===d.target) continue;
@@ -591,7 +656,7 @@ function animateDoors(dt){
 doors.forEach(d=>{const a=d.p*Math.PI/2; d.leaves.forEach(l=>{if(l.slide) l.g.position.copy(l.base).addScaledVector(l.slide,d.p); else l.g.rotation.y=l.rot*a;});});
 let lastT=performance.now();
 renderer.setAnimationLoop(now=>{
-  animateDoors(Math.min(50,now-lastT)); animateWind(Math.min(50,now-lastT)); lastT=now;
+  animateDoors(Math.min(50,now-lastT)); animateWind(Math.min(50,now-lastT)); animateFlap(Math.min(50,now-lastT)); lastT=now;
   if(anim){const k=Math.min(1,(now-anim.t0)/anim.dur),e=ease(k);
     camera.position.lerpVectors(anim.from.p,anim.to.p,e); controls.target.lerpVectors(anim.from.t,anim.to.t,e); if(k>=1)anim=null;}
   controls.update(); renderer.render(scene,camera);

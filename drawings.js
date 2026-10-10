@@ -58,6 +58,7 @@ function svg(title,xmin,xmax,ymin,ymax,mapY){
     rect:(x1,y1,x2,y2,o={})=>out.push(`<rect x="${X(Math.min(x1,x2))}" y="${Y(mapY?Math.max(y1,y2):Math.min(y1,y2))}" width="${(Math.abs(x2-x1)*S).toFixed(1)}" height="${(Math.abs(y2-y1)*S).toFixed(1)}" ${a(Object.assign({fill:'#fff',stroke:'#111','stroke-width':LW},o))}/>`),
     poly:(pts,o={})=>out.push(`<polygon points="${pts.map(([x,y])=>X(x)+','+Y(y)).join(' ')}" ${a(Object.assign({fill:'#fff',stroke:'#111','stroke-width':LW},o))}/>`),
     path:(d,o={})=>out.push(`<path d="${d}" ${a(Object.assign({fill:'none',stroke:'#111','stroke-width':LW},o))}/>`),
+    polyline:(pts,o={})=>out.push(`<polyline points="${pts.map(([x,y])=>X(x)+','+Y(y)).join(' ')}" ${a(Object.assign({fill:'none',stroke:'#111','stroke-width':LW,'stroke-linejoin':'round'},o))}/>`),
     arc:(cx,cy,r,a0,a1,o={})=>{ // angles in radians, world space, counter-clockwise from +x
       const p=t=>[cx+r*Math.cos(t),cy+r*Math.sin(t)], [x0,y0]=p(a0), [x1,y1]=p(a1), sweep=mapY?((a1>a0)?0:1):((a1>a0)?1:0);
       out.push(`<path d="M${X(x0)},${Y(y0)} A${(r*S).toFixed(1)},${(r*S).toFixed(1)} 0 0 ${sweep} ${X(x1)},${Y(y1)}" ${a(Object.assign({fill:'none',stroke:'#111','stroke-width':LW*.8},o))}/>`);
@@ -82,10 +83,10 @@ function svg(title,xmin,xmax,ymin,ymax,mapY){
 
 function build(){
   const D=window.KALPA, c=D.c, h=c.T/2;
-  const roofH=x=>Math.max(c.EAVE, x<=c.CX ? c.EAVE+x*c.SL : c.EAVE+(c.FAR-x)*c.SR);
+  const CUT=4, cuts=o=>o.sill<CUT&&o.head>CUT; // plan cut plane at 4': only openings crossing it show in plan
   const segments=w=>{ // solid pieces of a wall between its openings, as [from,to] along the wall
     const segs=[]; let cur=w.a;
-    [...w.openings].sort((p,q)=>p.s-q.s).forEach(o=>{segs.push([cur,o.s]); cur=o.e;});
+    [...w.openings].filter(cuts).sort((p,q)=>p.s-q.s).forEach(o=>{segs.push([cur,o.s]); cur=o.e;});
     segs.push([cur,w.b]); return segs.filter(([p,q])=>q-p>1e-3);
   };
 
@@ -104,7 +105,7 @@ function build(){
     D.walls.forEach(w=>{
       const f=w.fixed, fill=w.future?'#999':'#111';
       segments(w).forEach(([p,q])=>w.axis==='x'?g.rect(p,f-h,q,f+h,{fill,stroke:'none'}):g.rect(f-h,p,f+h,q,{fill,stroke:'none'}));
-      w.openings.forEach(o=>{
+      w.openings.filter(cuts).forEach(o=>{
         if(o.type==='open') return;
         const along=(t,n)=>w.axis==='x'?[t,f+n]:[f+n,t]; // point at distance t along the wall, n across it
         if(o.type==='window'||o.type==='french'){
@@ -146,17 +147,21 @@ function build(){
     {name:'Road-side elevation (looking towards the drain)',u:(x,z)=>-x,d:(x,z)=>z,facing:'x',ends:'road'},
     {name:'Paddy-side elevation (road on the left)',u:(x,z)=>z,d:(x,z)=>x,facing:'z',ends:'paddy'},
     {name:'Drain-side elevation (looking towards the road)',u:(x,z)=>x,d:(x,z)=>-z,facing:'x',ends:'drain'},
-    {name:'Far-side elevation (main door)',u:(x,z)=>z,d:(x,z)=>-x,facing:'z',ends:'far'},
+    {name:'Far-side elevation (main door, road on the right)',u:(x,z)=>-z,d:(x,z)=>-x,facing:'z',ends:'far'},
   ];
   const ground=-.75;
   views.forEach(v=>{
-    const items=[];
+    const items=[], labels=[], facings=[]; // facings: depth + u-range of every facing wall, to tell hidden openings
+    D.walls.forEach(w=>{ if(w.axis===v.facing){ const pts=w.axis==='x'?[[w.a,w.fixed],[w.b,w.fixed]]:[[w.fixed,w.a],[w.fixed,w.b]]; const us=pts.map(([x,z])=>v.u(x,z)); facings.push({d:Math.min(...pts.map(([x,z])=>v.d(x,z))),u0:Math.min(...us),u1:Math.max(...us)}); } });
     D.walls.forEach(w=>{
       const pts=w.axis==='x'?[[w.a,w.fixed],[w.b,w.fixed]]:[[w.fixed,w.a],[w.fixed,w.b]];
       const us=pts.map(([x,z])=>v.u(x,z)), ds=pts.map(([x,z])=>v.d(x,z));
       const facing=w.axis===v.facing;
+      const gableAbove=w.axis==='x'&&D.gables.some(gb=>Math.abs(gb.zc-w.fixed)<1e-6); // wall continues up into a gable
       if(facing) items.push({d:Math.min(...ds),draw:g=>{
-        g.rect(Math.min(...us),0,Math.max(...us),w.H);
+        const u0=Math.min(...us), u1=Math.max(...us);
+        g.rect(u0,0,u1,w.H,{stroke:'none'});
+        g.polyline(gableAbove?[[u0,w.H],[u0,0],[u1,0],[u1,w.H]]:[[u0,w.H],[u0,0],[u1,0],[u1,w.H],[u0,w.H]]); // no line along the top under a gable
         w.openings.forEach(o=>{
           if(o.type==='open') return;
           const p=w.axis==='x'?[[o.s,w.fixed],[o.e,w.fixed]]:[[w.fixed,o.s],[w.fixed,o.e]], ou=p.map(([x,z])=>v.u(x,z));
@@ -165,55 +170,57 @@ function build(){
           if(o.type==='french'){ const n=o.panels||2, wd=(u1-u0)/n; for(let i=1;i<n;i++) g.line(u0+i*wd,y0,u0+i*wd,y1,{'stroke-width':.5}); g.line(u0,(y0+y1)/2,u1,(y0+y1)/2,{'stroke-width':.5}); }
           if(o.type==='window'&&(o.panels||1)>1){ const n=o.panels, wd=(u1-u0)/n; for(let i=1;i<n;i++) g.line(u0+i*wd,y0,u0+i*wd,y1,{'stroke-width':.5}); }
           if(o.type==='double') g.line((u0+u1)/2,y0,(u0+u1)/2,y1,{'stroke-width':.5});
-          // size label above the head (width × height); sill height below the cill for windows
-          g.text((u0+u1)/2,y1+.55,`${ft(u1-u0)} × ${ft(y1-y0)}`,{'font-size':7.5,fill:'#333'});
-          if(y0>0) g.text((u0+u1)/2,y0-.55,`sill ${ft(y0)}`,{'font-size':7,fill:'#555'});
+          // size label above the head (width × height); sill height below the cill for windows. Labels are drawn
+          // after all walls so an adjoining wall's fill can't clip them, but only for openings not hidden by a nearer wall.
+          const wd=Math.min(...ds), hidden=facings.some(f=>f.d<wd-1e-6&&f.u0<=u0+1e-6&&f.u1>=u1-1e-6);
+          if(!hidden) labels.push(g=>{
+            g.text((u0+u1)/2,y1+.55,`${ft(u1-u0)} × ${ft(y1-y0)}`,{'font-size':7.5,fill:'#333'});
+            if(y0>0) g.text((u0+u1)/2,y0-.55,`sill ${ft(y0)}`,{'font-size':7,fill:'#555'});
+          });
         });
       }});
       else{ // edge-on: a thin sliver, capped at the eave because the roof covers anything above
         const uc=v.u(...(w.axis==='x'?[w.a,w.fixed]:[w.fixed,w.a])); // same u for both ends
-        items.push({d:Math.min(...ds),draw:g=>g.rect(uc-h,0,uc+h,Math.min(w.H,c.EAVE))});
+        items.push({d:Math.min(...ds)+.3,draw:g=>g.rect(uc-h,0,uc+h,Math.min(w.H,c.EAVE)-.1)}); // biased behind a facing wall on the same line, top tucked under its fill
       }
     });
     D.gables.forEach(gb=>{
       if(v.facing==='x'){
-        const pts=[[gb.x0,c.EAVE],[gb.x1,c.EAVE],[gb.x1,roofH(gb.x1)]]; if(gb.x0<c.CX&&gb.x1>c.CX) pts.push([c.CX,c.RIDGE]); pts.push([gb.x0,roofH(gb.x0)]);
-        items.push({d:v.d(gb.x0,gb.zc),draw:g=>g.poly(pts.map(([x,y])=>[v.u(x,gb.zc),y]))});
+        items.push({d:v.d(gb.x0,gb.zc),draw:g=>{
+          const P=gb.pts.map(([x,y])=>[v.u(x,gb.zc),y]);
+          g.poly(P,{stroke:'none'});
+          g.polyline([...P.slice(1),P[0]]); // up one side, over the roof line and down the other: no base line
+        }});
       }
     });
     items.sort((p,q)=>q.d-p.d); // far first
     // extents
     const allU=[]; D.walls.forEach(w=>{const pts=w.axis==='x'?[[w.a,w.fixed],[w.b,w.fixed]]:[[w.fixed,w.a],[w.fixed,w.b]]; pts.forEach(([x,z])=>allU.push(v.u(x,z)));});
     const umin=Math.min(...allU), umax=Math.max(...allU);
-    const g=svg(v.name,umin-7,umax+8,ground-2.5,c.RIDGE+4,true);
+    const g=svg(v.name,umin-7,umax+8,ground-2.5,c.TOP+4,true);
     // ground line and plinth
     g.line(umin-7,ground,umax+7,ground,{'stroke-width':1.2});
     g.rect(umin,ground,umax,0,{fill:'#ddd'});
     items.forEach(it=>it.draw(g));
-    // roof
-    const O=c.OVER, eaveL=c.EAVE-O*c.SL, eaveR=c.EAVE-O*c.SR, th=.3;
-    const profile=(u)=>{ // gable-end profile polygon in u for a view where the ridge runs towards the viewer
-      const pts=[[u(-O),eaveL],[u(c.CX),c.RIDGE+.1],[u(c.FAR+O),eaveR],[u(c.FAR+O),eaveR+th],[u(c.CX),c.RIDGE+.1+th],[u(-O),eaveL+th]]; return pts;
-    };
-    if(v.ends==='road'){ g.poly(profile(x=>v.u(x,0)),{fill:'#f3f3f3'}); }
-    if(v.ends==='drain'){ // bedroom block end is set back; its slope beyond the kitchen strip shows behind
-      g.poly([[v.u(-O,0),eaveL],[v.u(c.CX,0),c.RIDGE+.1],[v.u(c.CX,0),c.RIDGE+.1+th],[v.u(-O,0),eaveL+th]],{fill:'#e6e6e6'});
-      const u0=v.u(c.CX-2-O,0), hs=c.EAVE+(c.CX-2-O)*c.SL;
-      g.poly([[u0,hs],[v.u(c.CX,0),c.RIDGE+.1],[v.u(c.FAR+O,0),eaveR],[v.u(c.FAR+O,0),eaveR+th],[v.u(c.CX,0),c.RIDGE+.1+th],[u0,hs+th]],{fill:'#f3f3f3'});
-    }
-    if(v.ends==='paddy'){ // paddy slope seen face-on: eave band to ridge; the strip over the kitchen bay has a higher eave
-      const z0=v.u(0,-O), z1=v.u(0,19+O), z2=v.u(0,c.DZ+O), hs=c.EAVE+(c.CX-2-O)*c.SL;
-      g.poly([[z0,eaveL],[z1,eaveL],[z1,hs],[z2,hs],[z2,c.RIDGE+.1+th],[z0,c.RIDGE+.1+th]],{fill:'#f3f3f3'});
-      g.line(z0,c.RIDGE+.1,z2,c.RIDGE+.1,{'stroke-width':.5}); g.line(z0,eaveL+th,z1,eaveL+th,{'stroke-width':.5}); g.line(z1,hs+th,z2,hs+th,{'stroke-width':.5});
-    }
-    if(v.ends==='far'){
-      const z0=v.u(0,-O), z2=v.u(0,c.DZ+O);
-      g.poly([[z0,eaveR],[z2,eaveR],[z2,c.RIDGE+.1+th],[z0,c.RIDGE+.1+th]],{fill:'#f3f3f3'});
-      g.line(z0,c.RIDGE+.1,z2,c.RIDGE+.1,{'stroke-width':.5}); g.line(z0,eaveR+th,z2,eaveR+th,{'stroke-width':.5});
-    }
+    labels.forEach(l=>l(g));
+    // roof, from the slabs the model built (y0/y1 = top of tile at x0/x1), far pieces first
+    const th=.25;
+    const slabs=[...D.roof].sort((p,q)=>{
+      if(v.facing==='x') return v.ends==='road' ? q.z0-p.z0 : p.z1-q.z1;
+      return v.ends==='paddy' ? q.x0-p.x0 : p.x1-q.x1;
+    });
+    slabs.forEach(r=>{
+      if(v.facing==='x'){ // gable-end view: the true sloped profile
+        const u0=v.u(r.x0,0), u1=v.u(r.x1,0);
+        g.poly([[u0,r.y0-th],[u1,r.y1-th],[u1,r.y1],[u0,r.y0]],{fill:'#f3f3f3'});
+      }else{ // side view: the surface shows when it rises away from the viewer, otherwise only the near fascia
+        const near=v.ends==='paddy'?r.y0:r.y1, far=v.ends==='paddy'?r.y1:r.y0, a=v.u(0,r.z0), b=v.u(0,r.z1);
+        g.rect(a,near-th,b,Math.max(near,far),{fill:'#f3f3f3'}); if(far>near) g.line(a,near,b,near,{'stroke-width':.5});
+      }
+    });
     // dimensions
     g.dim(umin,ground,umax,ground,-1.8,ft(umax-umin));
-    g.dim(umax,0,umax,c.EAVE,-2.2,'11′'); g.dim(umax,0,umax,c.RIDGE,-4.4,'14′ 6″');
+    g.dim(umax,0,umax,c.EAVE,-2.2,'11′'); g.dim(umax,0,umax,c.TOP,-4.4,ft(c.TOP));
     g.dim(umin,ground,umin,0,2.2,'9″');
     panel.querySelector('.sheets').insertAdjacentHTML('beforeend',g.done());
   });

@@ -42,7 +42,11 @@ Append a hash to open a view directly, for example `index.html#road` or `#plan`.
 
 - Grid: x = 0 at the paddy-side wall, 15 at the centre wall under the ridge, 27 at the far wall.
   z = 0 at the road, 19 at the bedroom block's drain wall, 28 at the living room's drain wall.
-- Eaves 11', ridge 14½' over the centre wall, so the two roof slopes have different pitches.
+- Eaves 11'. With `SPLIT=true` (the current setting, top of `app.js`) the roof is a split monopitch: the bedroom roof rises to
+  14½' at the centre wall and hoods 2' past it, the living roof rises only to 13½' below it, and the band of centre wall
+  between them is left as a plain open slot facing the living-room side. The living roof has a gap of the same size at its
+  top edge, and one hinged flap closes either; click the flap to swing it between bedroom and living room. `SPLIT=false` restores the single
+  ridged roof (ridge 14½' with the ventilated ridge from `VENT`).
 - Walls around the bedroom run to the roof underside so the room can be air-conditioned.
 - Passive ventilation is switchable: `VENT` at the top of `app.js` adds a ventilated ridge (raised capping over a slot) and open eaves
   (eave-side walls stop 6" under the roof with exposed rafter tails). Set it to `false` for the sealed roof.
