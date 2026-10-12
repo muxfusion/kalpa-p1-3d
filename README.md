@@ -40,6 +40,8 @@ Append a hash to open a view directly, for example `index.html#road` or `#plan`.
 
 ## Model notes
 
+- **Doors & windows** (switcher at the top of the Plan tab): a key plan with marks, a dimensioned elevation of each type,
+  and a schedule with sizes, sills, operation, quantities and locations. **Download PDF** exports whichever set is showing.
 - Grid: x = 0 at the paddy-side wall, 15 at the centre wall under the ridge, 27 at the far wall.
   z = 0 at the road, 19 at the bedroom block's drain wall, 28 at the living room's drain wall.
 - Eaves 11'. With `SPLIT=true` (the current setting, top of `app.js`) the roof is a split monopitch: the bedroom roof rises to

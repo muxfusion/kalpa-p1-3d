@@ -25,13 +25,17 @@ body{background:var(--bg);color:var(--fg);font-family:var(--sans);overflow:hidde
 #plan figure{margin:0;border:1px solid #ddd;border-radius:8px;overflow:hidden;background:#fff}
 #plan figcaption{font:600 12px/1 var(--sans);letter-spacing:.06em;text-transform:uppercase;color:#444;padding:10px 14px;border-bottom:1px solid #eee}
 #plan svg{display:block;width:100%;height:auto}
+#plan .sheets[hidden]{display:none}
+#plan-sets{position:fixed;top:calc(env(safe-area-inset-top,0px) + 16px);left:50%;transform:translateX(-50%);z-index:2;display:flex;gap:2px;padding:4px;background:var(--panel);backdrop-filter:blur(8px);border:1px solid var(--line);border-radius:10px}
+#plan-sets button{white-space:nowrap}
+@media (max-width:760px){#plan-sets{top:calc(env(safe-area-inset-top,0px) + 66px)} #plan{padding-top:calc(env(safe-area-inset-top,0px) + 122px)}}
 .pdf-btn{position:fixed;top:calc(env(safe-area-inset-top,0px) + 16px);right:68px;z-index:2;background:var(--accent);color:var(--accent-ink);border-color:transparent;padding:0 14px;height:40px;border-radius:20px}
 .pdf-btn:disabled{opacity:.6;cursor:wait}
 @media print{ /* fallback when the PDF libraries can't load: print only the sheets */
   body>*:not(#plan){display:none!important}
   #plan{position:static;padding:0;overflow:visible}
   #plan[hidden]{display:block}
-  .pdf-btn{display:none}
+  .pdf-btn,#plan-sets{display:none}
   #plan figure{border:0;break-inside:avoid;page-break-inside:avoid;margin-bottom:16px}
 }
 

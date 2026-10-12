@@ -13,12 +13,22 @@ tabs.forEach(b=>b.addEventListener('click',()=>{
 // Download PDF: one A4 landscape page per sheet, drawn as vectors with jsPDF + svg2pdf (loaded on demand).
 // If the libraries can't be fetched, fall back to the browser's print dialog (print CSS shows only the sheets).
 const pdfBtn=document.getElementById('plan-pdf');
+// Two drawing sets in the Plan tab: the general drawings and the door & window schedule. The PDF button exports
+// whichever set is showing.
+const sets=panel.querySelectorAll('#plan-sets button'), setEl=k=>panel.querySelector(`.sheets[data-set="${k}"]`);
+let activeSet='drawings';
+sets.forEach(b=>b.addEventListener('click',()=>{
+  activeSet=b.dataset.set;
+  sets.forEach(t=>t.setAttribute('aria-pressed',t===b));
+  panel.querySelectorAll('.sheets').forEach(el=>{el.hidden=el.dataset.set!==activeSet;});
+  panel.scrollTop=0;
+}));
 const loadScript=src=>new Promise((res,rej)=>{const s=document.createElement('script'); s.src=src; s.onload=res; s.onerror=()=>rej(new Error('could not load '+src)); document.head.appendChild(s);});
-async function makePdf(){
+async function makePdf(set,filename){
   if(!window.jspdf) await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
   if(!window.svg2pdf) await loadScript('https://cdn.jsdelivr.net/npm/svg2pdf.js@2.2.1/dist/svg2pdf.umd.min.js');
   const doc=new window.jspdf.jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
-  const figs=[...panel.querySelectorAll('figure')], W=297, H=210, m=12;
+  const figs=[...setEl(set).querySelectorAll('figure')], W=297, H=210, m=12;
   for(let i=0;i<figs.length;i++){
     if(i) doc.addPage();
     // PDF standard fonts lack ′ ″ × and the mono face, so export a cleaned clone with ASCII marks in Helvetica
@@ -31,12 +41,12 @@ async function makePdf(){
     await doc.svg(el,{x:m,y:m+8,width:vb.width*k,height:vb.height*k});
     hold.remove();
   }
-  doc.save('kalpa-villa-plan.pdf');
+  doc.save(filename);
 }
 pdfBtn.addEventListener('click',async()=>{
   if(!built){build(); built=true;}
   pdfBtn.disabled=true; pdfBtn.textContent='Preparing…';
-  try{ await makePdf(); }
+  try{ await makePdf(activeSet, activeSet==='dw'?'kalpa-villa-doors-windows.pdf':'kalpa-villa-plan.pdf'); }
   catch(e){ console.warn('PDF export failed, using print instead:',e); window.print(); }
   finally{ pdfBtn.disabled=false; pdfBtn.textContent='Download PDF'; }
 });
@@ -63,6 +73,7 @@ function svg(title,xmin,xmax,ymin,ymax,mapY){
       const p=t=>[cx+r*Math.cos(t),cy+r*Math.sin(t)], [x0,y0]=p(a0), [x1,y1]=p(a1), sweep=mapY?((a1>a0)?0:1):((a1>a0)?1:0);
       out.push(`<path d="M${X(x0)},${Y(y0)} A${(r*S).toFixed(1)},${(r*S).toFixed(1)} 0 0 ${sweep} ${X(x1)},${Y(y1)}" ${a(Object.assign({fill:'none',stroke:'#111','stroke-width':LW*.8},o))}/>`);
     },
+    circle:(x,y,r,o={})=>out.push(`<circle cx="${X(x)}" cy="${Y(y)}" r="${(r*S).toFixed(1)}" ${a(Object.assign({fill:'#fff',stroke:'#111','stroke-width':LW},o))}/>`),
     text:(x,y,str,o={})=>out.push(`<text x="${X(x)}" y="${Y(y)}" ${a(Object.assign({'font-size':11,'text-anchor':'middle','dominant-baseline':'middle',fill:'#111'},o))}>${esc(str)}</text>`),
     // dimension line between two points with end ticks and a label (offset: perpendicular distance in ft)
     dim:(x1,y1,x2,y2,offset,label)=>{
@@ -138,7 +149,7 @@ function build(){
     g.dim(-h,0,-h,14,7.6,'14′'); g.dim(-h,14,-h,19,7.6,'5′'); g.dim(-h,-h,-h,19+h,9.6,'19′ 6″');
     g.dim(c.FAR+h,0,c.FAR+h,19,-7.6,'19′'); g.dim(c.FAR+h,19,c.FAR+h,c.DZ,-7.6,'9′'); g.dim(c.FAR+h,-h,c.FAR+h,c.DZ+h,-9.6,'28′ 6″');
     g.dim(13,c.DZ+h,c.FAR,c.DZ+h,3.2,'14′'); g.dim(0,19+h,13,19+h,3.2,'13′');
-    panel.querySelector('.sheets').insertAdjacentHTML('beforeend',g.done());
+    setEl('drawings').insertAdjacentHTML('beforeend',g.done());
   }
 
   // ---------- ELEVATIONS ----------
@@ -222,7 +233,139 @@ function build(){
     g.dim(umin,ground,umax,ground,-1.8,ft(umax-umin));
     g.dim(umax,0,umax,c.EAVE,-2.2,'11′'); g.dim(umax,0,umax,c.TOP,-4.4,ft(c.TOP));
     g.dim(umin,ground,umin,0,2.2,'9″');
-    panel.querySelector('.sheets').insertAdjacentHTML('beforeend',g.done());
+    setEl('drawings').insertAdjacentHTML('beforeend',g.done());
   });
+  buildDW(D,c,h,cuts,segments);
+}
+
+// ---------- DOORS & WINDOWS ----------
+// Every opening the model built is grouped into types (same kind, panels, width, height and sill), given a mark,
+// and shown three ways: tagged on a key plan, drawn as a dimensioned elevation, and listed in a schedule.
+function buildDW(D,c,h,cuts,segments){
+  const where=(w,mid)=>{ // wall name and room for an opening
+    if(w.axis==='x'){
+      if(w.fixed===0) return ['Road wall', mid<c.CX?'Bedroom':'Living'];
+      if(w.fixed===19) return ['Drain wall', mid<10?'Bathroom':'Laundry'];
+      if(w.fixed===c.DZ) return ['Drain wall','Kitchen'];
+      if(w.fixed===14) return ['Partition','Bedroom / laundry'];
+    }else{
+      if(w.fixed===0) return ['Paddy wall', mid<14?'Bedroom':'Bathroom'];
+      if(w.fixed===10) return ['Bath / laundry wall','Bathroom'];
+      if(w.fixed===c.FAR) return ['Far wall', mid<19?'Living':'Kitchen'];
+      if(w.fixed===13) return ['Kitchen bay wall','Kitchen'];
+      if(w.fixed===c.CX) return ['Centre wall','Laundry / living'];
+    }
+    return ['Wall',''];
+  };
+  // collect openings
+  const ops=[];
+  D.walls.forEach(w=>w.openings.forEach(o=>{
+    if(o.type==='open') return;
+    const mid=(o.s+o.e)/2, [wall,room]=where(w,mid), n=o.panels||1;
+    const along=(t,k)=>w.axis==='x'?[t,w.fixed+k]:[w.fixed+k,t];
+    ops.push({kind:o.type, panels:o.type==='single'?1:n, w:o.e-o.s, h:o.head-o.sill, sill:o.sill, wall, room, phase:w.future?'Phase 2':'Phase 1',
+      at:along(mid,0), axis:w.axis, fixed:w.fixed, outward:o.out||-1});
+  }));
+  D.extras.forEach(e=>{ if(e.type==='slide') ops.push({kind:'sliding',panels:1,w:5,h:7.4,sill:0,wall:'Partition',room:'Bedroom / laundry',phase:'Phase 1',at:[12.5,14],axis:'x',fixed:14}); });
+  // group into types and give marks: D doors, F French windows, W windows
+  const cat=k=>k==='french'?'F':k==='window'?'W':'D';
+  const key=o=>[o.kind,o.panels,o.w.toFixed(2),o.h.toFixed(2),o.sill.toFixed(2)].join('|');
+  const types=[];
+  ops.forEach(o=>{ let t=types.find(t=>t.key===key(o)); if(!t){ t={key:key(o),kind:o.kind,panels:o.panels,w:o.w,h:o.h,sill:o.sill,items:[]}; types.push(t);} t.items.push(o); });
+  const order={D:0,F:1,W:2};
+  types.sort((p,q)=>order[cat(p.kind)]-order[cat(q.kind)] || q.w*q.h-p.w*p.h);
+  const count={D:0,F:0,W:0};
+  types.forEach(t=>{ const k=cat(t.kind); t.mark=k+(++count[k]); t.items.forEach(o=>{o.mark=t.mark;}); });
+  const name=t=>({french:'French window',window:'Window',single:'Door',double:'Double door',sliding:'Sliding door'}[t.kind]||t.kind);
+  const operation=t=>t.kind==='french'?(t.panels>=4?`${t.panels}-panel bi-fold, outward`:`${t.panels} leaves, outward`)
+    :t.kind==='window'?(t.panels>1?`${t.panels} panes, glazed`:'Single pane, glazed')
+    :t.kind==='single'?'Hinged leaf':t.kind==='double'?'Hinged pair':t.kind==='sliding'?'Top-hung sliding':'';
+  const finish=t=>t.kind==='french'?'Timber frame, glass above and below mid rail':t.kind==='window'?'Timber frame, clear glass'
+    :t.kind==='sliding'?'Timber, vertical boards':'Timber leaf';
+  const put=g=>setEl('dw').insertAdjacentHTML('beforeend',g.done());
+
+  // 1. key plan
+  {
+    const g=svg('Door & window key plan',-8,36,-7,35,false);
+    D.slabs.forEach(sl=>{ if(sl.poly) g.poly(sl.poly,{fill:'none',stroke:'#bbb','stroke-width':.5,'stroke-dasharray':'3 2'}); else g.rect(sl.x0,sl.z0,sl.x1,sl.z1,{fill:'#f6f6f6',stroke:'#ccc','stroke-width':.5}); });
+    D.walls.forEach(w=>{
+      const f=w.fixed, fill=w.future?'#999':'#111';
+      segments(w).forEach(([p,q])=>w.axis==='x'?g.rect(p,f-h,q,f+h,{fill,stroke:'none'}):g.rect(f-h,p,f+h,q,{fill,stroke:'none'}));
+      w.openings.filter(cuts).forEach(o=>{ if(o.type==='open') return; const A=w.axis==='x'?[[o.s,f],[o.e,f]]:[[f,o.s],[f,o.e]]; g.line(A[0][0],A[0][1],A[1][0],A[1][1],{'stroke-width':.6}); });
+    });
+    const room=(x,z,n)=>g.text(x,z,n,{'font-size':9,fill:'#777'});
+    room(7.5,7,'BEDROOM'); room(12.5,16.5,'LAUNDRY'); room(5,16.5,'BATH'); room(21,9.5,'LIVING'); room(21,23.5,'KITCHEN');
+    ops.forEach(o=>{
+      // tag outside the wall line (away from the house centre), high-level windows marked the same way
+      const [x,z]=o.at, n=o.axis==='x'?(o.fixed<=14?-1:1):(o.fixed<13.5?-1:1), off=1.7; // partition tags go to the bedroom side
+      const tx=o.axis==='x'?x:x+n*off, tz=o.axis==='x'?z+n*off:z;
+      g.line(x,z,tx,tz,{'stroke-width':.4,stroke:'#888'});
+      g.circle(tx,tz,.85,{'stroke-width':.8});
+      g.text(tx,tz,o.mark,{'font-size':8.5,'font-weight':600});
+    });
+    g.text(13,-5.5,'ROAD',{'font-size':9,fill:'#666'}); g.text(-6,13,'PADDY',{'font-size':9,fill:'#666'}); g.text(13,33.5,'DRAIN',{'font-size':9,fill:'#666'});
+    put(g);
+  }
+
+  // 2. type elevations, drawn to scale, two rows
+  {
+    const half=Math.ceil(types.length/2), rows=[types.slice(0,half),types.slice(half)];
+    const rowW=r=>r.reduce((s,t)=>s+Math.max(t.w,3)+6,0);
+    const W=Math.max(...rows.map(rowW))+2, RH=19;
+    const g=svg('Door & window types · elevations from outside',0,W,0,RH*rows.length,true);
+    rows.forEach((r,ri)=>{
+      let x=3; const base=RH*(rows.length-ri)-12.5; // floor line of this row
+      r.forEach(t=>{
+        const w=t.w, ox=x+(Math.max(w,3)-w)/2, y0=base+t.sill, y1=y0+t.h;
+        g.line(ox-1,base,ox+w+1,base,{'stroke-width':.6,stroke:'#999'}); // floor
+        g.rect(ox,y0,ox+w,y1,{'stroke-width':1.1});
+        const f=.15; g.rect(ox+f,y0+(t.sill>0?f:0),ox+w-f,y1-f,{'stroke-width':.5});
+        if(t.kind==='french'||t.kind==='window'){
+          const n=t.panels, pw=w/n; for(let i=1;i<n;i++) g.line(ox+i*pw,y0,ox+i*pw,y1,{'stroke-width':.6});
+          if(t.kind==='french'){ const m=y0+t.h*.5; g.line(ox,m,ox+w,m,{'stroke-width':.6});
+            for(let i=0;i<n;i++){ const a=ox+i*pw, hingeLeft=i<n/2; // hinge side shown by the apex of the swing lines
+              const hx=hingeLeft?a:a+pw, lx=hingeLeft?a+pw:a; g.polyline([[lx,y1-.15],[hx,(y0+y1)/2],[lx,y0+.15]],{'stroke-width':.4,stroke:'#888','stroke-dasharray':'3 2'}); } }
+        }
+        if(t.kind==='single'){ g.polyline([[ox+w-.15,y1-.15],[ox+.15,(y0+y1)/2],[ox+w-.15,y0+.15]],{'stroke-width':.4,stroke:'#888','stroke-dasharray':'3 2'}); g.line(ox+w-.45,y0+3.2,ox+w-.45,y0+3.9,{'stroke-width':1.2}); }
+        if(t.kind==='sliding'){ for(let i=1;i<6;i++) g.line(ox+i*w/6,y0+.2,ox+i*w/6,y1-.2,{'stroke-width':.35,stroke:'#aaa'}); const ay=y0+3.6; g.line(ox+w*.75,ay,ox+w*.25,ay,{'stroke-width':.8}); g.polyline([[ox+w*.25+.4,ay+.3],[ox+w*.25,ay],[ox+w*.25+.4,ay-.3]],{'stroke-width':.8}); }
+        // dimensions
+        g.dim(ox,y0,ox+w,y0,-1.2,ft(w)); g.dim(ox,y0,ox,y1,1.3,ft(t.h)); if(t.sill>0) g.dim(ox+w,base,ox+w,y0,-1.1,ft(t.sill));
+        // mark and notes
+        g.circle(ox+w/2,y1+1.4,.9,{'stroke-width':.9}); g.text(ox+w/2,y1+1.4,t.mark,{'font-size':9,'font-weight':600});
+        g.text(ox+w/2,base-3.0,name(t),{'font-size':9,'font-weight':600});
+        g.text(ox+w/2,base-4.2,`${ft(w)} × ${ft(t.h)}${t.sill>0?`, sill ${ft(t.sill)}`:''}`,{'font-size':8.5,fill:'#333'});
+        g.text(ox+w/2,base-5.4,`Qty ${t.items.length}`,{'font-size':8.5,fill:'#333'});
+        x+=Math.max(w,3)+6;
+      });
+    });
+    put(g);
+  }
+
+  // 3. schedule table
+  {
+    const cols=[['Mark',0],['Type',3.5],['Width',11],['Height',16],['Sill',21],['Operation',25],['Finish',36],['Qty',53],['Location',56.5]];
+    const lines=[]; // one table row per type, locations stacked
+    types.forEach(t=>{
+      const locs=[...new Set(t.items.map(o=>`${o.room}, ${o.wall}${o.phase==='Phase 2'?' (phase 2)':''}`))];
+      lines.push({t,locs});
+    });
+    const RH=1.25, rows=lines.reduce((s,l)=>s+Math.max(1,l.locs.length),0), W=84, H=4+rows*RH+1;
+    const g=svg('Door & window schedule',0,W,0,H,false);
+    const head=1.6; g.rect(.5,.6,W-.5,head+.6,{fill:'#f1f1f1',stroke:'#bbb','stroke-width':.5});
+    cols.forEach(([n,x])=>g.text(1+x,1.4,n.toUpperCase(),{'text-anchor':'start','font-size':8,'font-weight':600,fill:'#444'}));
+    let y=head+1.7;
+    lines.forEach(({t,locs},i)=>{
+      const nrow=Math.max(1,locs.length), top=y-RH*.7, bot=y+RH*(nrow-1)+RH*.45;
+      if(i%2) g.rect(.5,top,W-.5,bot,{fill:'#fafafa',stroke:'none'});
+      const cell=(x,v,o={})=>g.text(1+x,y,v,Object.assign({'text-anchor':'start','font-size':9},o));
+      cell(0,t.mark,{'font-weight':600}); cell(3.5,name(t)); cell(11,ft(t.w)); cell(16,ft(t.h)); cell(21,t.sill>0?ft(t.sill):'—');
+      cell(25,operation(t)); cell(36,finish(t)); cell(53,String(t.items.length));
+      locs.forEach((l,k)=>g.text(1+56.5,y+k*RH,l,{'text-anchor':'start','font-size':9}));
+      g.line(.5,bot,W-.5,bot,{'stroke-width':.3,stroke:'#ddd'});
+      y+=nrow*RH;
+    });
+    g.text(1,y+.6,`Sizes are structural openings, width × height, in feet and inches. ${ops.length} openings in ${types.length} types.`,{'text-anchor':'start','font-size':8,fill:'#666'});
+    put(g);
+  }
 }
 })();

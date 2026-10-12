@@ -16,7 +16,12 @@
 </div>
 <section id="plan" hidden aria-label="Plan and elevations">
   <button id="plan-pdf" class="pdf-btn">Download PDF</button>
-  <div class="sheets"></div>
+  <div id="plan-sets" role="tablist" aria-label="Drawing set">
+    <button data-set="drawings" aria-pressed="true">Drawings</button>
+    <button data-set="dw" aria-pressed="false">Doors &amp; windows</button>
+  </div>
+  <div class="sheets" data-set="drawings"></div>
+  <div class="sheets" data-set="dw" hidden></div>
 </section>
 <button id="help-open" class="help-btn" aria-label="Dimensions" title="Dimensions">?</button>
 
